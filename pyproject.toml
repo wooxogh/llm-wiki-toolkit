@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-wiki"
+version = "0.1.0"
+description = "A local-first pipeline that turns a Markdown vault into memory an LLM agent can trust"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["pyyaml>=6", "numpy>=1.24", "rank-bm25>=0.2.2"]
+
+[project.optional-dependencies]
+ml = ["torch>=2.2", "sentence-transformers>=3"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+wiki-index  = "llm_wiki.build_index:main"
+wiki-health = "llm_wiki.wiki_health:main"
+wiki-recall = "llm_wiki.retrieval.recall:main"
+wiki-embed  = "llm_wiki.retrieval.embed_index:main"
+wiki-eval   = "llm_wiki.evaluation.eval:main"
+wiki-gate   = "llm_wiki.evaluation.eval_gate:main"
+wiki-lint   = "llm_wiki.hygiene.claim_lint:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+llm_wiki = ["evaluation/auto_thresholds.json", "hygiene/claim_lint/patterns/*.toml"]

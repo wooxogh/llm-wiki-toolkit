@@ -1,0 +1,7 @@
+{
+  "_note": "Calibrated on the author's private 214-page vault. These are a starting point, not a default that fits your corpus — run `wiki-eval --calibrate` on your own gold set.",
+  "score": 0.634645938873291,
+  "margin": 0.015752315521240234,
+  "none": 0.4786416898237,
+  "rerank": 0.5
+}

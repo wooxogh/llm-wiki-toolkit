@@ -1,0 +1,12 @@
+# English hedging pack.
+#
+# Each alternation is wrapped in a *scoped* inline-flag group (?i:...) rather
+# than a global (?i) — load_packs() joins pack fragments with `|`, and Python
+# 3.11 rejects a global inline flag anywhere but the start of the whole
+# compiled pattern once fragments from other packs are concatenated. English
+# hedges land at sentence start constantly ("Probably ...", "Likely ...",
+# "Seems to ..."), so matching case-sensitively would miss most real prose.
+hedge = "(?i:probably|likely|presumably|appears to|seems? to|might be|possibly|I think)"
+literal_sight = ""
+deliberate_uncertainty = "(?i:not_observed|not measured|unverified|untested)"
+evidence = "(?i:measured|verified|observed|benchmarked)"

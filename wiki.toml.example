@@ -1,0 +1,33 @@
+# Every key here is optional — the built-in defaults are a complete
+# configuration. Copy this to your vault root and change only what differs.
+
+[vault]
+content_dirs = ["domain", "patterns", "entities", "raw"]
+# root = "vault"      # optional: redirect the CONTENT root to a subdirectory of
+                      # this file's own directory. Unset by default, which means
+                      # the content root is where wiki.toml sits.
+
+[schema]
+layers  = ["domain", "pattern", "entity", "raw"]
+domains = []          # leave empty to skip domain validation entirely
+required = ["id", "layer", "projects", "tags", "confidence", "status", "summary"]
+
+[lint]
+packs = ["en"]        # claim_lint hedging packs; "ko" is also shipped
+
+[eval]
+gold = "eval_gold.json"
+
+[eval.minimums]       # curation floors for the gold set; scale to your corpus
+                      # table axes (layer/domain/category) replace the default
+                      # table entirely when set — e.g. layer = { pattern = 30 }
+                      # drops the other layers' floors, it does not merge with them
+total = 150
+recent_cases = 30
+layer    = { domain = 100, pattern = 25, entity = 5, raw = 2 }
+domain   = {}
+category = { ambiguous = 10, negative = 8 }
+
+[ingest]
+repos = []            # absolute paths the daily ingest scans for new commits
+prompt_file = "integrations/ingest/prompt.txt"
