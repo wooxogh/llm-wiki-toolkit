@@ -11,7 +11,7 @@ from llm_wiki.v2.schemas import TEMPORAL_PROMPT_VERSION, RelationType
 
 def resolve(adapter: UserLLMAdapter, source: Concept, target: Concept,
             relation: RelationProposal | None = None) -> RelationProposal | None:
-    if relation and relation.relation not in {RelationType.CONTRADICTS.value, RelationType.SUPERSEDES.value, RelationType.OVERRIDES.value}:
+    if relation is None or relation.relation not in {RelationType.CONTRADICTS.value, RelationType.SUPERSEDES.value, RelationType.OVERRIDES.value}:
         return None
     proposal = adapter.resolve_temporal(source, target)
     if proposal is None:
