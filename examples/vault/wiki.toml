@@ -1,0 +1,24 @@
+# Example vault config — the fixture CI gates against, and the vault the
+# README quickstart is run against. See docs/CONFIGURATION.md for the full
+# key reference; this file only sets what differs from the built-in defaults.
+
+[schema]
+domains = ["tooling", "research"]
+
+[lint]
+packs = ["en", "ko"]
+
+[eval]
+gold = "eval_gold.json"
+
+# The built-in defaults (total 150, layer.domain 100, ...) are sized for a
+# 200+ page corpus. A 9-page/12-case example cannot meet them, and should
+# not have to — that mismatch is exactly why minimums are configurable per
+# vault rather than hard-coded in the tool. These floors are sized to this
+# vault's own 12 gold cases (see eval_gold.json).
+[eval.minimums]
+total = 10
+recent_cases = 0
+layer    = { domain = 4, pattern = 3, entity = 1 }
+domain   = {}
+category = { ambiguous = 1, negative = 1 }

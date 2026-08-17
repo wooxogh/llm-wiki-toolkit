@@ -1,0 +1,15 @@
+# Korean hedging pack.
+#
+# 보이다 is a homonym: "~로 보인다" = *seems*, but "지표가 보인다" = *is visible*.
+# Measured: matching bare 보인다 produced obvious false positives, so
+# `literal_sight` carves the sight reading back out.
+hedge = "보인다|보임|것 같|듯하|듯\\b|아마|추정|예상되|일 것이다|일 듯|겠지"
+literal_sight = "(?:이|가|도)\\s*(?:안\\s*|못\\s*)?보인다"
+deliberate_uncertainty = "미검증|미실측|미관측"
+evidence = "실측|측정|검증"
+# Korean units. Folded into the digit-anchored universal unit group (NOT
+# appended as free-standing alternatives) — see _universal_evidence() for why:
+# 쪽 ("side") and 건 (a common counter, also "case/incident") are ordinary
+# words outside a measurement context, and matching them bare was a real
+# false-positive source.
+evidence_units = "초|분|시간|건|회|개|행|쪽|페이지"

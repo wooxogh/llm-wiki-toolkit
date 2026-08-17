@@ -1,0 +1,63 @@
+name: ci
+
+# Verifies the toolchain and that the shipped example vault still passes the
+# same gates a real vault does. Deliberately light: no torch, no embedding
+# model, no network.
+#
+# Intentionally NOT path-filtered. A shared change (paths, config, _retrieve,
+# build_index) can break verification for files it does not mention, and a path
+# filter would let exactly that merge with a green check.
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install (no ML extra)
+        run: python -m pip install -e ".[dev]"
+      - name: Unit tests
+        run: python -m pytest tests -q
+      - name: Assert no heavy ML import crept into the test path
+        run: |
+          python -X importtime -m pytest tests -q 2> imports.log
+          if grep -qE 'torch|sentence_transformers' imports.log; then
+            echo "::error::tests imported torch/sentence-transformers — move it behind the runtime boundary"
+            exit 1
+          fi
+
+  example-vault:
+    runs-on: ubuntu-latest
+    env:
+      WIKI_VAULT: ${{ github.workspace }}/examples/vault
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Index matches canonical page frontmatter
+        run: python -m llm_wiki.build_index --check
+      - name: Derived-artifact health (CI subset)
+        run: python -m llm_wiki.wiki_health --mode ci
+      - name: Gold corpus schema and coverage
+        run: python -m llm_wiki.evaluation.eval --validate-only

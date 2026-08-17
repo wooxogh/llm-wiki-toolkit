@@ -1,0 +1,71 @@
+[
+  {"q": "why fuse BM25 and dense scores instead of picking one",
+   "expect": ["hybrid-ranking-tradeoffs"],
+   "layer": "domain", "domain": "tooling",
+   "category": "indirect", "difficulty": "easy",
+   "split": "calibration", "added": "2026-01-18"},
+
+  {"q": "리랭커는 왜 짧은 페이지에 도움이 되나",
+   "expect": ["cross-encoder-rerank-effect"],
+   "layer": "domain", "domain": "tooling",
+   "category": "indirect", "difficulty": "hard",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "what are the four files in the embeddings store and what does each track",
+   "expect": ["embedding-store-layout"],
+   "layer": "domain", "domain": "tooling",
+   "category": "direct", "difficulty": "easy",
+   "split": "calibration", "added": "2026-01-18"},
+
+  {"q": "what frontmatter fields does every vault page need",
+   "expect": ["vault-schema-contract"],
+   "layer": "domain", "domain": "research",
+   "category": "direct", "difficulty": "easy",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "why compare index.yaml byte-for-byte instead of just re-validating frontmatter",
+   "expect": ["generated-artifact-must-be-byte-checked"],
+   "layer": "pattern",
+   "category": "indirect", "difficulty": "hard",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "why do eval gold cases carry a calibration and test split label",
+   "expect": ["calibrate-and-report-on-different-splits"],
+   "layer": "pattern",
+   "category": "direct", "difficulty": "easy",
+   "split": "calibration", "added": "2026-01-18"},
+
+  {"q": "하나의 색인으로 여러 언어의 질의를 어떻게 함께 처리하나",
+   "expect": ["one-index-serves-every-query-language"],
+   "layer": "pattern",
+   "category": "indirect", "difficulty": "hard",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "why flag a hedged claim only when it has no nearby measurement",
+   "expect": ["unmeasured-claims-are-worse-than-gaps"],
+   "layer": "pattern",
+   "category": "indirect", "difficulty": "hard",
+   "split": "calibration", "added": "2026-01-18"},
+
+  {"q": "what does this example vault ship to make the CI gates real",
+   "expect": ["example-vault-walkthrough"],
+   "layer": "entity",
+   "category": "direct", "difficulty": "easy",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "which evaluation habit can look rigorous while actually hiding a wrong result",
+   "expect": ["calibrate-and-report-on-different-splits", "unmeasured-claims-are-worse-than-gaps"],
+   "layer": "pattern",
+   "category": "ambiguous", "difficulty": "hard",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "how do I make a Kubernetes operator retry a webhook",
+   "expect": [], "expect_none": true,
+   "category": "negative", "difficulty": "easy",
+   "split": "test", "added": "2026-01-18"},
+
+  {"q": "what's the average rainfall in a temperate rainforest",
+   "expect": [], "expect_none": true,
+   "category": "negative", "difficulty": "easy",
+   "split": "calibration", "added": "2026-01-18"}
+]

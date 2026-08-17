@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.embeddings/
+.contradictions.md
+.compaction.md
+.local/
+.obsidian/
+.DS_Store
+*.egg-info/
+build/
+dist/
+
+# Scratch space for the SDD tooling that builds this repo; not part of the
+# published project.
+.superpowers/

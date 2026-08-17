@@ -1,0 +1,195 @@
+{
+  "artifact_schema_version": "llm-wiki-v2.1",
+  "chunk_schema_version": "heading-aware-700.v1",
+  "concept_extraction": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "concepts"
+    ],
+    "properties": {
+      "concepts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "text",
+            "summary",
+            "source_quote",
+            "confidence"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "summary": {
+              "type": "string"
+            },
+            "source_quote": {
+              "type": "string",
+              "minLength": 1
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "placement": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "concept_id",
+      "primary_topic_id",
+      "secondary_topic_ids",
+      "create_topic_label",
+      "collection_id",
+      "create_collection_label",
+      "collection_type",
+      "confidence",
+      "reason"
+    ],
+    "properties": {
+      "concept_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "primary_topic_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "secondary_topic_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "uniqueItems": true
+      },
+      "create_topic_label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "collection_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "create_collection_label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "collection_type": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "reason": {
+        "type": "string"
+      }
+    }
+  },
+  "relation": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "proposal"
+    ],
+    "properties": {
+      "proposal": {
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "source_concept_id",
+              "target_concept_id",
+              "relation",
+              "confidence",
+              "evidence",
+              "same_subject",
+              "same_scope",
+              "temporal_change_possible",
+              "reason"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_concept_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_concept_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relation": {
+                "enum": [
+                  "SUPPORTS",
+                  "COMPLEMENTS",
+                  "CONTRADICTS",
+                  "SUPERSEDES",
+                  "OVERRIDES",
+                  "DUPLICATE_OF"
+                ]
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "evidence": {
+                "type": "string",
+                "minLength": 1
+              },
+              "same_subject": {
+                "type": "boolean"
+              },
+              "same_scope": {
+                "type": "boolean"
+              },
+              "temporal_change_possible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "concept_schema_version": "atomic-concept.v1",
+  "prompt_versions": {
+    "concept_extraction": "concept-extraction.v2",
+    "placement": "concept-placement.v2",
+    "relation": "relation-classification.v2",
+    "temporal": "temporal-resolution.v1"
+  }
+}

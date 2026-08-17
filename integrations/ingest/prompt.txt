@@ -1,0 +1,11 @@
+Run the daily vault ingest: read docs/INGEST.md and follow it exactly,
+non-interactively. For each repository listed under [ingest] repos in wiki.toml,
+scan git commits since the newest log.md date and that project's agent memory
+for new files; add or update vault pages per README.md (measured facts only,
+filename == id, [[id]] links, projects tag). For any community printed by
+`python -m llm_wiki.reports.community_report --stale`, read its member pages and
+write a one-to-two sentence grounded synthesis into community_summaries.json
+keyed by that community's sig. Prepend one log.md entry. Do NOT run the index,
+embedding, graph, or community writers, and do not commit — the pipeline does
+that deterministically after you finish. If nothing new, append one
+"no new knowledge" log line.

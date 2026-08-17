@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Template for the daily ingest LaunchAgent. Do not install this file
+     directly — run integrations/macos/install.sh, which substitutes __VAULT__
+     and writes the result to ~/Library/LaunchAgents/, then loads it with
+     launchctl. macOS only.
+
+     StartInterval fires several times a day (and right after sleep/wake), but
+     ingest_pipeline.py's once-a-day stamp guard limits the actual run to once a
+     day. A failed day leaves the stamp unwritten, so the next tick retries
+     automatically — this interval is a retry cadence, not a run cadence. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.llm-wiki.ingest</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/sh</string>
+    <string>__VAULT__/integrations/ingest/run_ingest.sh</string>
+  </array>
+  <key>StartInterval</key><integer>10800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/wiki-ingest.log</string>
+  <key>StandardErrorPath</key><string>/tmp/wiki-ingest.log</string>
+</dict></plist>
