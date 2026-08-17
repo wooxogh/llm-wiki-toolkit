@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
@@ -174,7 +175,7 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
     # NetStore's append/upsert methods do an unlocked read-modify-write and
     # are not safe to call from more than one thread.
     for index, (source, target, proposals) in enumerate(
-        _compute_relation_proposals(pairs, adapter, store.vault), start=1
+        _compute_relation_proposals(pairs, adapter, store.vault, cfg.v2_relation_concurrency), start=1
     ):
         for proposal in proposals:
             if proposal.id not in terminal:
@@ -190,9 +191,15 @@ def _classify_pair(adapter, vault, source, target):
     return source, target, [p for p in (relation, temporal) if p is not None]
 
 
-def _compute_relation_proposals(pairs, adapter, vault):
-    for source, target in pairs:
-        yield _classify_pair(adapter, vault, source, target)
+def _compute_relation_proposals(pairs, adapter, vault, workers: int = 1):
+    if workers <= 1:
+        for source, target in pairs:
+            yield _classify_pair(adapter, vault, source, target)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_classify_pair, adapter, vault, source, target) for source, target in pairs]
+        for future in as_completed(futures):
+            yield future.result()
 
 
 def _candidate_pairs(vault, concepts, topk: int, min_score: float,

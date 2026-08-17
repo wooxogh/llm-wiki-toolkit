@@ -41,6 +41,7 @@ embed_device = "auto"  # auto prefers cuda, then mps, then cpu
 chunk_target_chars = 700
 relation_candidate_topk = 10
 relation_candidate_min_score = 0.0   # raise to skip classifying low-relevance candidate pairs
+relation_concurrency = 1   # raise to classify multiple candidate pairs concurrently; commits stay single-threaded
 safe_relation_min_confidence = 0.90
 allow_ai_topic_creation = true
 require_user_approval = ["CONTRADICTS", "SUPERSEDES", "OVERRIDES"]
