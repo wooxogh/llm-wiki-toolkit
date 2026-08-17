@@ -22,6 +22,8 @@ from llm_wiki.v2.models import Concept
 
 MODEL_ID = "deterministic-hash-embedding-v1"
 VECTOR_DIM = 64
+INDEX_SCHEMA = "concept-index-v1"
+INDEXED_TEXT_SCHEMA = "text-v1"
 RRF_K = 60
 DENSE_WEIGHT = 2.0
 SPARSE_WEIGHT = 1.0
@@ -81,21 +83,77 @@ def _embed_query(text: str, model: str, vault: Path | None = None) -> np.ndarray
     return vectorize(text)
 
 
-def build_index(vault: Path | None = None, show_progress: bool = False) -> int:
+def build_index(vault: Path | None = None, show_progress: bool = False,
+                changed_only: bool = False) -> int:
     root = artifacts.ensure_layout(vault) / "concept_embeddings"
     concepts = read_concepts(vault)
-    matrix = _embed_passages([_index_text(c) for c in concepts], vault, show_progress)
+    texts = [_index_text(c) for c in concepts]
+    text_hashes = [hashlib.sha1(text.encode("utf-8")).hexdigest() for text in texts]
+    previous = _load_previous_index(root) if changed_only else None
+    reusable: dict[str, np.ndarray] = {}
+    if previous and _identity_compatible(previous[2], vault, previous[0]):
+        previous_vectors, previous_meta, _ = previous
+        previous_rows = {row.get("concept_id"): index for index, row in enumerate(previous_meta)}
+        for concept, text_hash in zip(concepts, text_hashes):
+            old_index = previous_rows.get(concept.id)
+            if old_index is None:
+                continue
+            old_meta = previous_meta[old_index]
+            if old_meta.get("chunk_hash") == concept.chunk_hash and old_meta.get("text_hash") == text_hash:
+                reusable[concept.id] = np.asarray(previous_vectors[old_index], dtype=np.float32)
+
+    changed = [concept for concept in concepts if concept.id not in reusable]
+    embedded = _embed_passages([_index_text(c) for c in changed], vault, show_progress) if changed else np.zeros((0, 0), dtype=np.float32)
+    dimension = int(embedded.shape[1]) if embedded.ndim == 2 and embedded.shape[0] else (
+        int(previous[0].shape[1]) if previous and previous[0].ndim == 2 and previous[0].shape[1] else VECTOR_DIM)
+    by_new_id = {concept.id: embedded[index] for index, concept in enumerate(changed)}
+    matrix = np.vstack([
+        reusable[concept.id] if concept.id in reusable else by_new_id[concept.id]
+        for concept in concepts
+    ]) if concepts else np.zeros((0, dimension), dtype=np.float32)
     np.save(root / "vectors.npy", matrix.astype(np.float32))
     meta = [{
         "concept_id": c.id,
         "chunk_id": c.chunk_id,
         "document_id": c.document_id,
         "chunk_hash": c.chunk_hash,
-        "text_hash": hashlib.sha1(_index_text(c).encode("utf-8")).hexdigest(),
-    } for c in concepts]
+        "text_hash": text_hash,
+    } for c, text_hash in zip(concepts, text_hashes)]
     (root / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     (root / "model.txt").write_text(_model_id(vault), encoding="utf-8")
+    (root / "identity.json").write_text(json.dumps({
+        "model_id": _model_id(vault),
+        "vector_dim": dimension,
+        "index_schema": INDEX_SCHEMA,
+        "indexed_text_schema": INDEXED_TEXT_SCHEMA,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     return len(concepts)
+
+
+def _load_previous_index(root: Path) -> tuple[np.ndarray, list[dict], dict] | None:
+    vectors_path, meta_path, identity_path = root / "vectors.npy", root / "meta.json", root / "identity.json"
+    if not (vectors_path.exists() and meta_path.exists() and identity_path.exists()):
+        return None
+    try:
+        vectors = np.load(vectors_path, mmap_mode="r")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(meta, list) or not isinstance(identity, dict):
+        return None
+    if vectors.ndim != 2 or vectors.shape[0] != len(meta):
+        return None
+    return vectors, meta, identity
+
+
+def _identity_compatible(identity: dict, vault: Path | None, vectors: np.ndarray) -> bool:
+    return (
+        identity.get("model_id") == _model_id(vault)
+        and identity.get("index_schema") == INDEX_SCHEMA
+        and identity.get("indexed_text_schema") == INDEXED_TEXT_SCHEMA
+        and identity.get("vector_dim") == int(vectors.shape[1])
+    )
 
 
 def search(vault: Path | None, query: str, k: int = 8,
@@ -149,8 +207,9 @@ def _ranks(scores: list[float], include_zero: bool) -> dict[int, int]:
 
 def is_stale(vault: Path | None = None) -> str | None:
     root = artifacts.artifact_path("concept_embeddings", vault)
-    vectors, meta_path, model = root / "vectors.npy", root / "meta.json", root / "model.txt"
-    if not vectors.exists() or not meta_path.exists() or not model.exists():
+    vectors, meta_path, model, identity_path = (root / "vectors.npy", root / "meta.json",
+                                                root / "model.txt", root / "identity.json")
+    if not vectors.exists() or not meta_path.exists() or not model.exists() or not identity_path.exists():
         return "concept index missing"
     if model.read_text(encoding="utf-8").strip() != _model_id(vault):
         return "concept index model identity stale"
@@ -158,9 +217,16 @@ def is_stale(vault: Path | None = None) -> str | None:
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     if len(meta) != len(concepts):
         return "concept index row count stale"
-    rows = int(np.load(vectors, mmap_mode="r").shape[0])
+    matrix = np.load(vectors, mmap_mode="r")
+    rows = int(matrix.shape[0])
     if rows != len(concepts):
         return "concept vector row count stale"
+    try:
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return "concept index identity stale"
+    if not _identity_compatible(identity, vault, matrix):
+        return "concept index identity stale"
     expected_ids = [c.id for c in concepts]
     stored_ids = [m.get("concept_id") for m in meta]
     if expected_ids != stored_ids:

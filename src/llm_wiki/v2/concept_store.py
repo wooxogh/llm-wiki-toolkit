@@ -47,6 +47,23 @@ def build_chunks(vault: Path | None = None, target_chars: int = DEFAULT_CHUNK_TA
     return chunks
 
 
+def _build_changed_chunks(
+    vault: Path | None,
+    docs: list[Document],
+    changed_ids: set[str],
+    target_chars: int,
+) -> list[Chunk]:
+    root = content_root(vault)
+    chunks: list[Chunk] = []
+    for doc in docs:
+        if doc.id not in changed_ids:
+            continue
+        path = root / doc.path
+        raw = path.read_text(encoding="utf-8")
+        chunks.extend(chunk_document(doc.id, doc.path, raw, target_chars))
+    return chunks
+
+
 def _concept_id(chunk: Chunk, proposal: ConceptProposal) -> str:
     raw = f"{chunk.id}|{proposal.source_quote}|{proposal.text}"
     return f"concept:{hashlib.sha1(raw.encode('utf-8')).hexdigest()[:16]}"
@@ -56,11 +73,12 @@ def concepts_from_chunks(
     chunks: list[Chunk],
     adapter: UserLLMAdapter | None = None,
     progress: Callable[[int, int, Chunk], None] | None = None,
+    vault: Path | None = None,
 ) -> list[Concept]:
     adapter = adapter or default_adapter()
     concepts: list[Concept] = []
     for index, chunk in enumerate(chunks, start=1):
-        for proposal in extract(chunk, adapter, getattr(adapter, "model_identity", "offline")):
+        for proposal in extract(chunk, adapter, getattr(adapter, "model_identity", "offline"), vault):
             if not proposal.source_quote or proposal.source_quote not in chunk.text:
                 continue
             start_in_chunk = chunk.text.index(proposal.source_quote)
@@ -121,23 +139,25 @@ def build_concepts(
         changed_only = False
     docs = collect_documents(vault)
     previous_docs = {doc.id: doc for doc in read_documents(vault)} if changed_only else {}
+    live_ids = {doc.id for doc in docs}
     changed_ids = {doc.id for doc in docs if previous_docs.get(doc.id, None) is None
                    or previous_docs[doc.id].content_hash != doc.content_hash}
-    if changed_only and not changed_ids:
+    deleted_ids = set(previous_docs) - live_ids
+    if changed_only and not changed_ids and not deleted_ids:
         return docs, read_chunks(vault), read_concepts(vault)
-    rebuilt = build_chunks(vault, target_chars)
     if changed_only:
+        rebuilt = _build_changed_chunks(vault, docs, changed_ids, target_chars)
         retained_chunks = [chunk for chunk in read_chunks(vault)
                            if chunk.document_id not in changed_ids and chunk.document_id in {doc.id for doc in docs}]
         chunks = retained_chunks + [chunk for chunk in rebuilt if chunk.document_id in changed_ids]
     else:
-        chunks = rebuilt
+        chunks = build_chunks(vault, target_chars)
     by_doc: dict[str, list[str]] = {}
     for chunk in chunks:
         by_doc.setdefault(chunk.document_id, []).append(chunk.id)
     docs = [Document(**{**doc.to_dict(), "chunk_ids": by_doc.get(doc.id, [])}) for doc in docs]
     rebuilt_concepts = concepts_from_chunks(
-        [chunk for chunk in chunks if chunk.document_id in changed_ids], adapter, progress)
+        [chunk for chunk in chunks if chunk.document_id in changed_ids], adapter, progress, vault)
     if changed_only:
         concepts = [concept for concept in read_concepts(vault)
                     if concept.document_id not in changed_ids and concept.document_id in {doc.id for doc in docs}] + rebuilt_concepts

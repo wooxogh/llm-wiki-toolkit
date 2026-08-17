@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
@@ -25,7 +26,8 @@ NetProgress = Callable[[str, int, int, str], None]
 
 def build_net(vault: Path | None = None, adapter: UserLLMAdapter | None = None,
               allow_ai_topic_creation: bool = True,
-              progress: NetProgress | None = None) -> NetStore:
+              progress: NetProgress | None = None,
+              changed_only: bool = False) -> NetStore:
     """Add/update source-derived nodes while retaining user tree and review state."""
     adapter = adapter or default_adapter(vault)
     cfg = config.load(vault)
@@ -44,6 +46,7 @@ def build_net(vault: Path | None = None, adapter: UserLLMAdapter | None = None,
     approved_edge_ids = {f"edge:{proposal.id}" for proposal in terminal_proposals
                          if proposal.status == "APPROVED"}
     existing_nodes = {node.id: node for node in store.nodes()}
+    dirty_ids = _dirty_concept_ids(concepts, existing_nodes) if changed_only else None
     existing_edges = [edge for edge in store.edges()
                       if edge.type != EdgeType.RELATES_TO.value or edge.id in approved_edge_ids]
     existing_document_placements = {
@@ -68,7 +71,9 @@ def build_net(vault: Path | None = None, adapter: UserLLMAdapter | None = None,
         nodes.append(NetNode(concept.id, NodeType.CONCEPT.value, concept.summary or concept.text,
                              state=prior.state if prior else "ACTIVE", created_by="system",
                              attrs={"document_id": concept.document_id, "chunk_id": concept.chunk_id,
-                                    "concept_state": concept.state or ConceptState.ACTIVE.value}))
+                                    "concept_state": concept.state or ConceptState.ACTIVE.value,
+                                    "chunk_hash": concept.chunk_hash,
+                                    "text_hash": _concept_text_hash(concept)}))
     nodes = _dedupe_nodes(nodes)
 
     # Retain user structure and committed semantic edges, dropping only endpoints
@@ -142,7 +147,7 @@ def build_net(vault: Path | None = None, adapter: UserLLMAdapter | None = None,
     _sync_concept_membership(store, concepts, vault)
     if not store.operations():
         store.append_operation(Operation(op_id("BUILD_NET", str(len(concepts))), "BUILD_NET", "system", {}, {"concepts": len(concepts)}))
-    _discover_relations(store, concepts, adapter, cfg, progress)
+    _discover_relations(store, concepts, adapter, cfg, progress, dirty_ids)
     artifacts.artifact_path("net_build_state.json", vault).write_text(json.dumps({
         "placement_prompt_version": artifacts.current_schema_manifest()["prompt_versions"]["placement"],
         "relation_prompt_version": artifacts.current_schema_manifest()["prompt_versions"]["relation"],
@@ -154,7 +159,8 @@ def build_net(vault: Path | None = None, adapter: UserLLMAdapter | None = None,
 
 
 def _discover_relations(store: NetStore, concepts, adapter, cfg,
-                        progress: NetProgress | None = None) -> None:
+                        progress: NetProgress | None = None,
+                        dirty_ids: set[str] | None = None) -> None:
     terminal = {proposal.id for proposal in store.proposals() if proposal.status in {"APPROVED", "REJECTED"}}
     pairs = []
     for index, source in enumerate(concepts, start=1):
@@ -163,6 +169,8 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
         if progress:
             progress("candidates", index, len(concepts), source.summary or source.id)
     for index, (source, target) in enumerate(pairs, start=1):
+        if dirty_ids is not None and source.id not in dirty_ids and target.id not in dirty_ids:
+            continue
         relation = classify(adapter, source, target)
         temporal = resolve(adapter, source, target, relation)
         for proposal in (relation, temporal):
@@ -171,6 +179,25 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
                                          cfg.v2_require_user_approval)
         if progress:
             progress("relations", index, len(pairs), f"{source.id} -> {target.id}")
+
+
+def _concept_text_hash(concept) -> str:
+    text = " ".join((concept.text, concept.summary, concept.source_quote))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _dirty_concept_ids(concepts, existing_nodes: dict) -> set[str]:
+    current = {concept.id: concept for concept in concepts}
+    dirty: set[str] = set()
+    for concept in concepts:
+        prior = existing_nodes.get(concept.id)
+        if not prior or prior.type != NodeType.CONCEPT.value:
+            dirty.add(concept.id)
+            continue
+        if (prior.attrs.get("chunk_hash") != concept.chunk_hash
+                or prior.attrs.get("text_hash") != _concept_text_hash(concept)):
+            dirty.add(concept.id)
+    return dirty
 
 
 def _sync_concept_membership(store: NetStore, concepts, vault: Path | None) -> None:

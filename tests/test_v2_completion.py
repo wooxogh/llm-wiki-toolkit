@@ -1,15 +1,21 @@
 import json
 from dataclasses import replace
 
+import numpy as np
+
 from llm_wiki.v2.chunking import chunk_document
 from llm_wiki.v2.concept_extraction import extract
+from llm_wiki.v2 import concept_index
 from llm_wiki.v2.concept_index import build_index
 from llm_wiki.v2.concept_store import build_concepts, read_concepts
 from llm_wiki.v2.evaluation import evaluate
-from llm_wiki.v2.models import ConceptProposal
+from llm_wiki.v2.llm_adapter import RuleBasedUserLLMAdapter
+from llm_wiki.v2.models import ConceptProposal, RelationProposal
 from llm_wiki.v2.net_builder import build_net
 from llm_wiki.v2.net_report import export_html, export_mermaid, render_tree
 from llm_wiki.v2.net_store import NetStore
+from llm_wiki.v2.review import submit_relation_proposal
+from llm_wiki.v2.schemas import RelationType
 from llm_wiki.v2.tree_ops import rename_topic, undo_last
 
 
@@ -109,3 +115,121 @@ def test_changed_build_preserves_unchanged_document_concepts(tmp_path):
     build_concepts(root, changed_only=True)
     after = {c.id for c in read_concepts(root) if c.document_id == "second"}
     assert after == before
+
+
+def test_changed_index_embeds_only_new_concepts(tmp_path, monkeypatch):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    index_root = root / ".llm_wiki_v2" / "concept_embeddings"
+    before_meta = json.loads((index_root / "meta.json").read_text(encoding="utf-8"))
+    before_vectors = np.load(index_root / "vectors.npy").copy()
+
+    (root / "domain" / "new.md").write_text(
+        "---\nid: new\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: new\n---\n# New\n\nNew service uses Redis.",
+        encoding="utf-8",
+    )
+    build_concepts(root, changed_only=True)
+
+    original = concept_index._embed_passages
+    embedded_batches = []
+
+    def tracked_embed(texts, vault=None, show_progress=False):
+        embedded_batches.append(len(texts))
+        return original(texts, vault, show_progress)
+
+    monkeypatch.setattr(concept_index, "_embed_passages", tracked_embed)
+    build_index(root, changed_only=True)
+
+    after_meta = json.loads((index_root / "meta.json").read_text(encoding="utf-8"))
+    after_vectors = np.load(index_root / "vectors.npy")
+    before_by_id = {row["concept_id"]: index for index, row in enumerate(before_meta)}
+    after_by_id = {row["concept_id"]: index for index, row in enumerate(after_meta)}
+    unchanged_ids = set(before_by_id) & set(after_by_id)
+    assert embedded_batches == [1]
+    assert all(np.array_equal(before_vectors[before_by_id[id_]], after_vectors[after_by_id[id_]])
+               for id_ in unchanged_ids)
+
+
+def test_changed_index_rebuilds_when_index_identity_changes(tmp_path, monkeypatch):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    identity_path = root / ".llm_wiki_v2" / "concept_embeddings" / "identity.json"
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["indexed_text_schema"] = "changed"
+    identity_path.write_text(json.dumps(identity), encoding="utf-8")
+
+    original = concept_index._embed_passages
+    embedded_batches = []
+
+    def tracked_embed(texts, vault=None, show_progress=False):
+        embedded_batches.append(len(texts))
+        return original(texts, vault, show_progress)
+
+    monkeypatch.setattr(concept_index, "_embed_passages", tracked_embed)
+    build_index(root, changed_only=True)
+
+    assert embedded_batches == [len(read_concepts(root))]
+
+
+def test_changed_net_classifies_only_pairs_touching_new_concept(tmp_path):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    build_net(root)
+    first_ids = {concept.id for concept in read_concepts(root)}
+
+    (root / "domain" / "new.md").write_text(
+        "---\nid: new\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: new\n---\n# New\n\nNew service uses Redis.",
+        encoding="utf-8",
+    )
+    build_concepts(root, changed_only=True)
+    build_index(root, changed_only=True)
+
+    class CountingAdapter(RuleBasedUserLLMAdapter):
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+
+        def classify_relation(self, source, target):
+            self.calls.append((source.id, target.id))
+            return super().classify_relation(source, target)
+
+    adapter = CountingAdapter()
+    build_net(root, adapter=adapter, changed_only=True)
+    new_ids = {concept.id for concept in read_concepts(root)} - first_ids
+
+    assert new_ids
+    assert adapter.calls
+    assert all(source in new_ids or target in new_ids for source, target in adapter.calls)
+
+
+def test_changed_net_preserves_approved_relation(tmp_path):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    store = build_net(root)
+    first, second = read_concepts(root)[:2]
+    proposal = RelationProposal(
+        "incremental-approved",
+        first.id,
+        second.id,
+        RelationType.SUPPORTS.value,
+        0.95,
+        first.source_quote,
+    )
+    assert submit_relation_proposal(store, proposal) == "committed"
+
+    (root / "domain" / "new.md").write_text(
+        "---\nid: new\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: new\n---\n# New\n\nNew service uses Redis.",
+        encoding="utf-8",
+    )
+    build_concepts(root, changed_only=True)
+    build_index(root, changed_only=True)
+    updated = build_net(root, changed_only=True)
+
+    assert any(edge.id == "edge:incremental-approved" for edge in updated.edges())

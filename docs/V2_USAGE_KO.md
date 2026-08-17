@@ -67,6 +67,23 @@ embed_device = "cuda" # NVIDIA, Apple Silicon은 mps, 강제 CPU는 cpu
 
 `wiki-concepts build`는 Markdown을 heading-aware chunk로 나누고 Concept를 추출하여 인덱스를 만듭니다. `# -> ## -> paragraph` 순으로 나누며, 700자를 넘는 단일 문단은 의미를 보존하기 위해 자르지 않습니다. `--changed`는 문서 hash가 바뀐 부분만 처리하지만, chunk 크기·artifact schema·prompt version·LLM model identity가 바뀌면 오래된 Concept가 섞이지 않도록 자동으로 전체 rebuild로 전환됩니다.
 
+문서를 추가하거나 수정한 뒤에는 incremental 빌드를 사용할 수 있습니다.
+
+```bash
+wiki-concepts build --changed
+wiki-net build --changed
+```
+
+이 경로는 변경되지 않은 문서의 chunk와 Concept를 재사용하고, 새롭거나 변경된 Concept만 embedding합니다. NET 관계도 변경된 Concept가 포함된 후보만 다시 분석하며, 기존에 사용자가 승인한 관계와 Topic/Collection 구조는 유지합니다. 삭제된 문서의 Concept와 vector는 제거됩니다.
+
+다음 변경이 있으면 안전을 위해 전체 rebuild가 필요합니다.
+
+- embedding model 또는 vector dimension 변경
+- chunk target, prompt, artifact schema, indexed text schema 변경
+- identity 또는 provenance artifact 누락·불일치
+
+일반적인 변경이 아닌 경우에는 `wiki-concepts build`와 `wiki-net build`를 인자 없이 실행해 전체 결과를 재생성할 수 있습니다.
+
 `wiki-net build`는 Topic/Document/Concept 구조를 배치하고, 하이브리드 후보 탐색 후 관계 proposal을 생성합니다. `NET placement`, `Relation candidates`, `Relation analysis` 세 진행바로 현재 단계와 남은 시간을 확인할 수 있습니다. `SUPPORTS`, `COMPLEMENTS`, `DUPLICATE_OF`만 설정한 신뢰도 이상에서 자동 반영됩니다. `CONTRADICTS`, `SUPERSEDES`, `OVERRIDES`는 절대로 자동 반영되지 않습니다.
 
 ```powershell

@@ -20,6 +20,7 @@ def main() -> int:
     build = sub.add_parser("build")
     build.add_argument("--vault", type=Path)
     build.add_argument("--no-ai-topic-creation", action="store_true")
+    build.add_argument("--changed", action="store_true", help="reconcile only Concepts affected by source changes")
     export = sub.add_parser("export")
     export.add_argument("--vault", type=Path)
     export.add_argument("--out", type=Path)
@@ -66,6 +67,7 @@ def main() -> int:
                 args.vault,
                 allow_ai_topic_creation=not args.no_ai_topic_creation,
                 progress=display.update,
+                changed_only=args.changed,
             )
         finally:
             display.close()
