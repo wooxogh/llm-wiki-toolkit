@@ -16,10 +16,11 @@ class ExtractionError(ValueError):
     pass
 
 
-def extract(chunk: Chunk, adapter: UserLLMAdapter, model_identity: str = "offline") -> list[ConceptProposal]:
+def extract(chunk: Chunk, adapter: UserLLMAdapter, model_identity: str = "offline",
+            vault: Path | None = None) -> list[ConceptProposal]:
     """Return only schema-valid, source-grounded atomic concept proposals."""
     key = hashlib.sha256(f"{chunk.content_hash}|{CONCEPT_PROMPT_VERSION}|{model_identity}".encode()).hexdigest()
-    cache = artifacts.artifact_path(f"cache/concepts/{key}.json")
+    cache = artifacts.artifact_path(f"cache/concepts/{key}.json", vault)
     if cache.exists():
         raw = json.loads(cache.read_text(encoding="utf-8"))
         return _validate(raw, chunk)

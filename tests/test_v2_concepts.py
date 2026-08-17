@@ -1,5 +1,8 @@
+from llm_wiki.v2 import artifacts
 from llm_wiki.v2.chunking import chunk_document
+from llm_wiki.v2.concept_extraction import extract
 from llm_wiki.v2.concept_store import concepts_from_chunks
+from llm_wiki.v2.models import ConceptProposal
 
 
 def test_two_claims_become_two_concepts_with_provenance():
@@ -42,3 +45,32 @@ def test_concept_progress_reports_completed_chunks():
     assert [event[0] for event in events] == list(range(1, len(chunks) + 1))
     assert all(event[1] == len(chunks) for event in events)
     assert events[-1][0] == events[-1][1]
+
+
+def test_concept_extraction_cache_is_scoped_to_target_vault(tmp_path):
+    chunks = chunk_document(
+        "doc",
+        "domain/doc.md",
+        "# Cache isolation\n\nThe cache belongs to this vault.",
+    )
+
+    class Adapter:
+        model_identity = "cache-isolation-test"
+
+        def extract_concepts(self, chunk):
+            return [ConceptProposal(
+                "The cache belongs to this vault.",
+                "cache ownership",
+                "The cache belongs to this vault.",
+                0.9,
+            )]
+
+    vault_a = tmp_path / "vault-a"
+    vault_b = tmp_path / "vault-b"
+    extract(chunks[0], Adapter(), model_identity=Adapter.model_identity, vault=vault_a)
+    extract(chunks[0], Adapter(), model_identity=Adapter.model_identity, vault=vault_b)
+
+    cache_a = artifacts.artifact_path("cache/concepts", vault_a)
+    cache_b = artifacts.artifact_path("cache/concepts", vault_b)
+    assert list(cache_a.glob("*.json"))
+    assert list(cache_b.glob("*.json"))
