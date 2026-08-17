@@ -196,10 +196,13 @@ def _compute_relation_proposals(pairs, adapter, vault, workers: int = 1):
         for source, target in pairs:
             yield _classify_pair(adapter, vault, source, target)
         return
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
         futures = [pool.submit(_classify_pair, adapter, vault, source, target) for source, target in pairs]
         for future in as_completed(futures):
             yield future.result()
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 def _candidate_pairs(vault, concepts, topk: int, min_score: float,

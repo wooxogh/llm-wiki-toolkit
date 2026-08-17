@@ -48,11 +48,11 @@ RETRY_BASE_DELAY = float(os.environ.get("WIKI_V2_LLM_RETRY_BASE_DELAY", "2.0"))
 def _retry(call: Callable[[], dict], sleep=time.sleep) -> dict:
     if MAX_RETRIES <= 0:
         raise RuntimeError(f"WIKI_V2_LLM_MAX_RETRIES must be > 0, got {MAX_RETRIES}")
-    last_exc: RuntimeError | None = None
+    last_exc: RuntimeError | subprocess.TimeoutExpired | None = None
     for attempt in range(MAX_RETRIES):
         try:
             return call()
-        except RuntimeError as exc:
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
             last_exc = exc
             if attempt < MAX_RETRIES - 1:
                 sleep(RETRY_BASE_DELAY * (2 ** attempt))

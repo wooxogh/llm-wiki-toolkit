@@ -1,3 +1,4 @@
+import re
 import threading
 from pathlib import Path
 
@@ -74,6 +75,13 @@ def _build_fixture_vault(vault: Path, relation_concurrency: int) -> None:
     build_net(vault, adapter=_ThreadRecordingAdapter())
 
 
+_VOLATILE_TIMESTAMP = re.compile(r'"(created_at|approved_at|updated_at)": "[^"]*"')
+
+
+def _stable(text: str) -> str:
+    return _VOLATILE_TIMESTAMP.sub(r'"\1": "<ts>"', text)
+
+
 def test_concurrent_build_commits_every_expected_proposal(tmp_path: Path):
     serial_vault = tmp_path / "serial"
     concurrent_vault = tmp_path / "concurrent"
@@ -90,6 +98,6 @@ def test_concurrent_build_commits_every_expected_proposal(tmp_path: Path):
     # show up here as a byte-level divergence between the two runs (missing
     # or overwritten lines), not merely as duplicate ids.
     assert serial_proposals != ""
-    assert serial_proposals == concurrent_proposals
+    assert _stable(serial_proposals) == _stable(concurrent_proposals)
     assert serial_edges != ""
-    assert serial_edges == concurrent_edges
+    assert _stable(serial_edges) == _stable(concurrent_edges)
