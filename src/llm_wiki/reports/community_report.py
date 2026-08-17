@@ -117,7 +117,7 @@ def render_md(rows: list[dict], vault: Path = VAULT_ROOT) -> str:
     L.append("")
     need = [r for r in rows if not r["synthesis"] and r["needs_synth"]]
     if need:
-        L.append(f"⚠ {len(need)} communities awaiting synthesis: " +
+        L.append(f"WARNING: {len(need)} communities awaiting synthesis: " +
                   ", ".join(f"`{r['label']}`({r['sig']})" for r in need))
         L.append("")
     for k, r in enumerate(rows, 1):

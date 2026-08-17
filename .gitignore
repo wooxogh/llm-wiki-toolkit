@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .embeddings/
+.llm_wiki_v2/
 .contradictions.md
 .compaction.md
 .local/

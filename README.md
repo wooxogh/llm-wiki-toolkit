@@ -31,6 +31,7 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 export PATH="$PWD/.venv/bin:$PATH"
 export WIKI_VAULT="$PWD/examples/vault"
 
+wiki-init --agent codex     # only needed when the target vault has no wiki.toml
 wiki-index                  # regenerate index.yaml from page frontmatter (validates)
 wiki-health --mode ci       # drift gate over the generated artifacts
 wiki-eval --validate-only   # gold-set schema + coverage check; embeds nothing
@@ -142,6 +143,7 @@ Three properties hold that whole picture together:
 
 | command | what it does | fails when |
 |---|---|---|
+| `wiki-init --agent codex\|claude` | create the minimal v2 `wiki.toml`; interactive first commands run this automatically | an existing config is never overwritten |
 | `wiki-index` | regenerate + validate `index.yaml` | frontmatter violates the schema; `--check` also fails on a stale index |
 | `wiki-health --mode ci\|full` | drift gate over every generated artifact | index stale, embeddings missing/stale/mismatched, a report or community synthesis stale |
 | `wiki-embed` | build/refresh `.embeddings/` (incremental) | needs the `ml` extra |
@@ -156,6 +158,44 @@ Three properties hold that whole picture together:
 
 `contradict` and `compact` deliberately have no console script: they are
 candidate generators for a human pass, not routine commands.
+
+## Using It With Codex
+
+The core toolkit is agent-agnostic: Codex can use the same vault through the
+shell commands above. Put the vault rules where Codex reads project guidance
+(`AGENTS.md` in the vault, or a short pointer from your repo's own `AGENTS.md`),
+then ask Codex to recall before it edits:
+
+```bash
+export WIKI_VAULT="$PWD/examples/vault"
+wiki-recall "how should this repo handle stale embeddings" --k 8 --rerank 10
+```
+
+If you use the optional per-project memory cache, sync it to Codex instead of
+Claude, or to both runtimes during a migration:
+
+```bash
+python -m integrations.agent_memory.sync_cache --project /abs/path/to/repo --target codex
+python -m integrations.agent_memory.sync_cache --project /abs/path/to/repo --target both
+```
+
+For unattended daily ingest, set the authoring runtime in `wiki.toml`:
+
+```toml
+[ingest]
+repos = ["/abs/path/to/repo"]
+agent = "codex"
+```
+
+or override it for one run:
+
+```bash
+python -m integrations.ingest.ingest_pipeline --agent codex
+```
+
+The Codex ingest step runs `codex exec` non-interactively, uses the vault as its
+workspace, and passes every configured repo as an additional readable/writable
+root with `--add-dir`.
 
 ## Measured evidence
 
@@ -301,6 +341,7 @@ are a complete configuration, so a vault with no config file works.
 ## Documentation
 
 - [AGENTS.md](AGENTS.md) — the working rules for an LLM agent reading and writing the vault
+- [docs/CODEX_USAGE_KO.md](docs/CODEX_USAGE_KO.md) — Codex용 한국어 사용법
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — `wiki.toml` reference, vault-root discovery, the frontmatter contract
 - [docs/RETRIEVAL.md](docs/RETRIEVAL.md) — chunking, tokenizer, fusion, rerank, the `--auto` contract, threshold recalibration, memory guards
 - [docs/EVALUATION.md](docs/EVALUATION.md) — gold schema, splits, coverage floors, the regression gate

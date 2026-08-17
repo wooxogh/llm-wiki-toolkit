@@ -308,24 +308,28 @@ def main() -> int:
     pages = collect_pages(vault)
     errors = validate(pages, vault)
     if errors:
-        print(f"❌ {len(errors)} validation error(s):", file=sys.stderr)
+        print(f"ERROR: {len(errors)} validation error(s):", file=sys.stderr)
         for e in errors:
             print(f"  - {e}", file=sys.stderr)
+        if pages and all(parse_frontmatter(path) is None for path, _ in pages):
+            print("NOTE: `wiki-index` is the legacy frontmatter indexer. For a plain-Markdown "
+                  "v2 vault, skip it and run `wiki-concepts build`, then `wiki-net build`.",
+                  file=sys.stderr)
         return 1
 
     for w in graph_warnings(pages, vault):
-        print(f"⚠ {w}", file=sys.stderr)
+        print(f"WARNING: {w}", file=sys.stderr)
 
     if args.check:
         drift = check_index(vault, out_path)
         if drift:
-            print(f"❌ {drift[0]} — run `wiki-index`", file=sys.stderr)
+            print(f"ERROR: {drift[0]} - run `wiki-index`", file=sys.stderr)
             return 1
-        print(f"✓ {len(pages)} pages valid, index.yaml up to date (check-only)")
+        print(f"OK: {len(pages)} pages valid, index.yaml up to date (check-only)")
         return 0
 
     n = write_index(vault, out_path)
-    print(f"✓ wrote index.yaml ({n} entries)")
+    print(f"OK: wrote index.yaml ({n} entries)")
     return 0
 
 

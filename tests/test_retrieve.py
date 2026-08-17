@@ -402,6 +402,32 @@ def test_load_reports_a_clear_error_when_no_embedding_store_exists(tmp_path, mon
     assert "WIKI_VAULT" in message
 
 
+def test_load_reports_a_clear_error_when_embedding_store_is_empty(tmp_path, monkeypatch):
+    """An empty store used to fall through to rank-bm25 and raise
+    ZeroDivisionError. Name the real problem instead: wiki-index found no pages
+    when wiki-embed last ran, or the store needs rebuilding."""
+    import json
+    import numpy as np
+    from llm_wiki.retrieval import _retrieve
+
+    emb = tmp_path / ".embeddings"
+    emb.mkdir()
+    np.save(emb / "vectors.npy", np.empty((0, 1024), dtype=np.float32))
+    (emb / "meta.json").write_text(json.dumps([]), encoding="utf-8")
+
+    monkeypatch.setattr(_retrieve, "VAULT", tmp_path)
+    monkeypatch.setattr(_retrieve, "EMB", emb)
+    monkeypatch.setattr(_retrieve, "_cache", {})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _retrieve._load()
+
+    message = str(exc_info.value)
+    assert "empty" in message
+    assert "wiki-index" in message
+    assert "wiki-embed" in message
+
+
 def test_dense_mode_ranks_by_raw_cosine_only():
     meta = [chunk("sparse-favourite"), chunk("dense-favourite")]
 

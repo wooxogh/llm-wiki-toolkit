@@ -83,16 +83,17 @@ def print_validation(cases: list, entries: list, minimums: dict = None) -> int:
     for label, items in (("validation error", errors), ("id leakage", leaks),
                          ("coverage shortfall", shortfalls)):
         if items:
-            print(f"\n❌ {len(items)} {label}(s):")
+            print(f"\nERROR: {len(items)} {label}(s):")
             for item in items:
                 print(f"  - {item}")
     ok = not (errors or leaks or shortfalls)
-    print("\n✓ gold set valid and complete" if ok else "\n❌ gold set not ready")
+    print("\nOK: gold set valid and complete" if ok else "\nERROR: gold set not ready")
     return 0 if ok else 1
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--v2", action="store_true", help="evaluate Concept/NET v2 gold metrics")
     ap.add_argument("--k", type=int, default=10, help="ranking depth")
     ap.add_argument("--gold", default=config.load(VAULT_ROOT).gold,
                     help="gold file (absolute path, or relative to the content root)")
@@ -113,6 +114,26 @@ def main() -> int:
     ap.add_argument("--calibrate", metavar="OUT",
                     help="fit thresholds on the calibration split and write them to OUT")
     args = ap.parse_args()
+
+    if args.v2:
+        from llm_wiki.v2.evaluation import evaluate, gold_path, validate_gold
+        from llm_wiki.v2 import artifacts
+        default_gold = config.load(VAULT_ROOT).gold
+        path = gold_path(VAULT, None if args.gold == default_gold else args.gold)
+        if not path.exists():
+            print(f"v2 gold file is missing: {path}")
+            return 1
+        data = json.loads(path.read_text(encoding="utf-8"))
+        errors = validate_gold(data)
+        if args.validate_only:
+            print("v2 gold valid" if not errors else "v2 gold invalid: " + "; ".join(errors))
+            return 0 if not errors else 1
+        if errors:
+            print("v2 gold invalid: " + "; ".join(errors))
+            return 1
+        metrics = evaluate(VAULT, str(path), args.k)
+        print(json.dumps(metrics, ensure_ascii=False, indent=2) if args.json else metrics)
+        return 0
 
     gold_path = resolve_path(args.gold)
     cases = eval_schema.load_gold(gold_path)
@@ -226,7 +247,7 @@ def run_calibration(cases: list, args) -> int:
 
     calibration = [c for c in cases if c.split == "calibration"]
     if not calibration:
-        print("❌ no calibration-split cases — nothing to fit")
+        print("ERROR: no calibration-split cases - nothing to fit")
         return 1
     records = _decision_records(calibration, args)
     thresholds = retrieval_policy.calibrate(records)
@@ -255,7 +276,7 @@ def print_auto(auto: dict) -> None:
     print(f"  answer  : {auto['answers']:>3}  ({auto['answer_rate']:.1%})  correct={auto['correct_answers']}")
     print(f"  review  : {auto['reviews']:>3}  ({auto['review_rate']:.1%})")
     print(f"  none    : {auto['nones']:>3}  ({auto['none_rate']:.1%})  correct={auto['correct_nones']}")
-    print(f"  ❌ FALSE ANSWERS: {auto['false_answers']}")
+    print(f"  ERROR: FALSE ANSWERS: {auto['false_answers']}")
 
 
 if __name__ == "__main__":

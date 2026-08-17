@@ -23,6 +23,7 @@ DEFAULT_CONTENT_DIRS = ("domain", "patterns", "entities", "raw")
 DEFAULT_LAYERS = ("domain", "pattern", "entity", "raw")
 DEFAULT_REQUIRED = ("id", "layer", "projects", "tags", "confidence", "status", "summary")
 DEFAULT_LINT_PACKS = ("en",)
+DEFAULT_V2_REQUIRE_USER_APPROVAL = ("CONTRADICTS", "SUPERSEDES", "OVERRIDES")
 DEFAULT_MINIMUMS = {
     "total": 150,
     "recent_cases": 30,
@@ -40,7 +41,18 @@ _KNOWN = {
     "schema": {"layers", "domains", "required"},
     "lint": {"packs"},
     "eval": {"gold", "minimums"},
-    "ingest": {"repos", "prompt_file"},
+    "ingest": {"repos", "prompt_file", "agent"},
+    "v2": {
+        "enabled",
+        "agent",
+        "embed_backend",
+        "embed_device",
+        "chunk_target_chars",
+        "relation_candidate_topk",
+        "safe_relation_min_confidence",
+        "allow_ai_topic_creation",
+        "require_user_approval",
+    },
 }
 
 
@@ -76,6 +88,16 @@ class Config:
     gold: str
     ingest_repos: tuple
     ingest_prompt_file: str | None
+    ingest_agent: str
+    v2_enabled: bool
+    v2_agent: str | None
+    v2_embed_backend: str
+    v2_embed_device: str
+    v2_chunk_target_chars: int
+    v2_relation_candidate_topk: int
+    v2_safe_relation_min_confidence: float
+    v2_allow_ai_topic_creation: bool
+    v2_require_user_approval: tuple
 
 
 def find_root(start: Path | None = None) -> Path:
@@ -147,7 +169,7 @@ def load(root: Path | None = None) -> Config:
     raw: dict = {}
     if path.is_file():
         try:
-            raw = tomllib.loads(path.read_text(encoding="utf-8"))
+            raw = tomllib.loads(path.read_text(encoding="utf-8-sig"))
         except tomllib.TOMLDecodeError as exc:
             raise ConfigError(f"{path.name} is not valid TOML: {exc}") from exc
         unknown = set(raw) - set(_KNOWN)
@@ -156,6 +178,7 @@ def load(root: Path | None = None) -> Config:
 
     vault, schema = _table(raw, "vault"), _table(raw, "schema")
     lint, evaluation, ingest = _table(raw, "lint"), _table(raw, "eval"), _table(raw, "ingest")
+    v2 = _table(raw, "v2")
 
     content_dirs = (_str_tuple(vault["content_dirs"], "[vault] content_dirs")
                     if "content_dirs" in vault else DEFAULT_CONTENT_DIRS)
@@ -188,6 +211,36 @@ def load(root: Path | None = None) -> Config:
     prompt_file = ingest.get("prompt_file")
     if prompt_file is not None and not isinstance(prompt_file, str):
         raise ConfigError("[ingest] prompt_file must be a string")
+    ingest_agent = ingest.get("agent", "claude")
+    if ingest_agent not in ("claude", "codex"):
+        raise ConfigError("[ingest] agent must be 'claude' or 'codex'")
+
+    v2_enabled = v2.get("enabled", False)
+    if not isinstance(v2_enabled, bool):
+        raise ConfigError("[v2] enabled must be a boolean")
+    v2_agent = v2.get("agent")
+    if v2_agent is not None and v2_agent not in ("codex", "claude"):
+        raise ConfigError("[v2] agent must be 'codex' or 'claude'")
+    v2_embed_backend = v2.get("embed_backend", "hash")
+    if v2_embed_backend not in ("hash", "qwen"):
+        raise ConfigError("[v2] embed_backend must be 'hash' or 'qwen'")
+    v2_embed_device = v2.get("embed_device", "auto")
+    if v2_embed_device not in ("auto", "cuda", "mps", "cpu"):
+        raise ConfigError("[v2] embed_device must be 'auto', 'cuda', 'mps', or 'cpu'")
+    v2_chunk_target_chars = v2.get("chunk_target_chars", 700)
+    if not isinstance(v2_chunk_target_chars, int) or v2_chunk_target_chars <= 0:
+        raise ConfigError("[v2] chunk_target_chars must be a positive integer")
+    v2_relation_candidate_topk = v2.get("relation_candidate_topk", 10)
+    if not isinstance(v2_relation_candidate_topk, int) or v2_relation_candidate_topk <= 0:
+        raise ConfigError("[v2] relation_candidate_topk must be a positive integer")
+    v2_safe_relation_min_confidence = v2.get("safe_relation_min_confidence", 0.90)
+    if not isinstance(v2_safe_relation_min_confidence, (int, float)):
+        raise ConfigError("[v2] safe_relation_min_confidence must be a number")
+    v2_allow_ai_topic_creation = v2.get("allow_ai_topic_creation", True)
+    if not isinstance(v2_allow_ai_topic_creation, bool):
+        raise ConfigError("[v2] allow_ai_topic_creation must be a boolean")
+    v2_require_user_approval = (_str_tuple(v2["require_user_approval"], "[v2] require_user_approval")
+                                if "require_user_approval" in v2 else DEFAULT_V2_REQUIRE_USER_APPROVAL)
 
     content_root = config_dir
     if "root" in vault:
@@ -207,4 +260,14 @@ def load(root: Path | None = None) -> Config:
         gold=gold,
         ingest_repos=repos,
         ingest_prompt_file=prompt_file,
+        ingest_agent=ingest_agent,
+        v2_enabled=v2_enabled,
+        v2_agent=v2_agent,
+        v2_embed_backend=v2_embed_backend,
+        v2_embed_device=v2_embed_device,
+        v2_chunk_target_chars=v2_chunk_target_chars,
+        v2_relation_candidate_topk=v2_relation_candidate_topk,
+        v2_safe_relation_min_confidence=float(v2_safe_relation_min_confidence),
+        v2_allow_ai_topic_creation=v2_allow_ai_topic_creation,
+        v2_require_user_approval=v2_require_user_approval,
     )

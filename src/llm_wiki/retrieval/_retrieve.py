@@ -234,6 +234,12 @@ def _load():
         from rank_bm25 import BM25Okapi
         vecs = np.load(EMB / "vectors.npy")
         meta = json.loads((EMB / "meta.json").read_text(encoding="utf-8"))
+        if not meta or len(vecs) == 0:
+            raise RuntimeError(
+                f"Embedding store at {EMB} is empty (resolved vault: {VAULT}). "
+                "Run `wiki-index` first so the vault has index entries, then run "
+                "`wiki-embed` to rebuild .embeddings/."
+            )
         bm25 = BM25Okapi([tokenize(fielded_sparse_text(m)) for m in meta])
         _cache.update(vecs=vecs, meta=meta, bm25=bm25)
     return _cache

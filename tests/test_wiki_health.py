@@ -177,6 +177,19 @@ def test_health_reports_invalid_frontmatter_before_index_comparison(vault):
     assert error_codes(issues) == {"index-invalid"}
 
 
+def test_v2_only_health_does_not_require_legacy_frontmatter_or_index(tmp_path):
+    (tmp_path / "wiki.toml").write_text(
+        '[vault]\ncontent_dirs = ["."]\n[v2]\nenabled = true\n', encoding="utf-8")
+    (tmp_path / "plain.md").write_text("# Plain note\n\nRetry count is 2.\n", encoding="utf-8")
+
+    issues = wiki_health.check_health(tmp_path, mode="ci", v2_only=True)
+
+    assert "index-invalid" not in error_codes(issues)
+    assert "v2-health" in error_codes(issues)  # v2 build has not run yet
+    data = wiki_health.report(tmp_path, mode="ci", v2_only=True)
+    assert data["scope"] == "v2"
+
+
 def test_unknown_mode_is_rejected(vault):
     with pytest.raises(ValueError, match="mode"):
         wiki_health.check_health(vault, mode="quick")

@@ -31,3 +31,15 @@ category = { ambiguous = 10, negative = 8 }
 [ingest]
 repos = []            # absolute paths the daily ingest scans for new commits
 prompt_file = "integrations/ingest/prompt.txt"
+agent = "claude"      # authoring CLI for ingest: "claude" or "codex"
+
+[v2]
+enabled = true
+agent = "codex"      # semantic CLI: "codex" or "claude"; omit for offline rules
+embed_backend = "qwen" # "qwen" for semantic vectors; "hash" for model-free smoke tests
+embed_device = "auto"  # auto prefers cuda, then mps, then cpu
+chunk_target_chars = 700
+relation_candidate_topk = 10
+safe_relation_min_confidence = 0.90
+allow_ai_topic_creation = true
+require_user_approval = ["CONTRADICTS", "SUPERSEDES", "OVERRIDES"]

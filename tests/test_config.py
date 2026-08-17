@@ -24,6 +24,7 @@ def test_defaults_apply_when_no_config_file(tmp_path):
     assert cfg.layers == frozenset(config.DEFAULT_LAYERS)
     assert cfg.required == config.DEFAULT_REQUIRED
     assert cfg.lint_packs == config.DEFAULT_LINT_PACKS
+    assert cfg.ingest_agent == "claude"
 
 
 def test_empty_domains_by_default_means_no_domain_validation(tmp_path):
@@ -33,6 +34,34 @@ def test_empty_domains_by_default_means_no_domain_validation(tmp_path):
 def test_declared_domains_are_loaded(tmp_path):
     write_toml(tmp_path, '[schema]\ndomains = ["research", "tooling"]\n')
     assert config.load(tmp_path).domains == {"research", "tooling"}
+
+
+def test_ingest_agent_is_configurable(tmp_path):
+    write_toml(tmp_path, '[ingest]\nagent = "codex"\n')
+    assert config.load(tmp_path).ingest_agent == "codex"
+
+
+def test_v2_embedding_backend_and_device_are_configurable(tmp_path):
+    write_toml(tmp_path, '[v2]\nembed_backend = "qwen"\nembed_device = "cuda"\n')
+    cfg = config.load(tmp_path)
+    assert cfg.v2_embed_backend == "qwen"
+    assert cfg.v2_embed_device == "cuda"
+
+
+@pytest.mark.parametrize("key,value", [
+    ("embed_backend", "other"),
+    ("embed_device", "gpu"),
+])
+def test_invalid_v2_embedding_setting_is_rejected(tmp_path, key, value):
+    write_toml(tmp_path, f'[v2]\n{key} = "{value}"\n')
+    with pytest.raises(config.ConfigError, match=key):
+        config.load(tmp_path)
+
+
+def test_unknown_ingest_agent_is_rejected(tmp_path):
+    write_toml(tmp_path, '[ingest]\nagent = "other"\n')
+    with pytest.raises(config.ConfigError, match="agent"):
+        config.load(tmp_path)
 
 
 def test_content_dirs_override(tmp_path):

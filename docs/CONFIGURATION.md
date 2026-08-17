@@ -130,6 +130,7 @@ requirement would be nonsense.
 |---|---|---|---|
 | `repos` | list of strings | `[]` | absolute paths the daily ingest scans for new commits. Empty (the default) omits the authoring step entirely. |
 | `prompt_file` | string | *(packaged default)* | the authoring prompt. Absolute, or relative to the content root. |
+| `agent` | string | `"claude"` | authoring CLI for the optional `llm` step. Supported values: `"claude"` and `"codex"`. |
 
 See [INGEST.md](INGEST.md).
 

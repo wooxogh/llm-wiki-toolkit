@@ -16,7 +16,7 @@ TARGETS = ("claude", "codex")
 
 
 def target_memory(home: Path, project: Path, target: str) -> Path:
-    slug = str(project).replace("/", "-")
+    slug = str(project).replace("\\", "-").replace("/", "-")
     return home / f".{target}" / "projects" / slug / "memory"
 
 

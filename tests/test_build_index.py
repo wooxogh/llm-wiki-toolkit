@@ -135,6 +135,16 @@ def test_collect_pages_walks_every_canonical_content_dir(vault):
     assert ids == {"one", "two", "three", "four"}
 
 
+def test_cli_explains_that_plain_markdown_should_use_v2(tmp_path, monkeypatch, capsys):
+    (tmp_path / "wiki.toml").write_text(
+        '[vault]\ncontent_dirs = ["."]\n[v2]\nenabled = true\n', encoding="utf-8")
+    (tmp_path / "plain.md").write_text("# Plain note\n\nNo frontmatter.\n", encoding="utf-8")
+    monkeypatch.setattr("sys.argv", ["wiki-index", "--vault", str(tmp_path)])
+
+    assert build_index.main() == 1
+    assert "legacy frontmatter indexer" in capsys.readouterr().err
+
+
 def test_unknown_domain_is_rejected_only_when_the_vault_declares_domains(vault):
     write_page(vault, "domain/research/one.md", page(id="one", domain="nope"))
     # No wiki.toml: the vault has not declared a domain vocabulary, so any value passes.

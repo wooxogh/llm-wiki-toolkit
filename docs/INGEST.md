@@ -11,7 +11,9 @@ derived artifact deterministically.
 
 The authoring step is done by an agent CLI session, so no API key is involved.
 The pipeline itself is pure Python and shells out to the same commands you would
-run by hand.
+run by hand. Claude remains the default authoring CLI for backward
+compatibility; Codex is supported by setting `[ingest] agent = "codex"` or by
+passing `--agent codex` to the orchestrator.
 
 ## The procedure
 
@@ -65,7 +67,8 @@ wiki-index                                            # index.yaml + validation
 wiki-embed                                            # vectors (incremental; weekly full rebuild)
 python -m llm_wiki.reports.graph_report --write       # GRAPH_REPORT.md
 python -m llm_wiki.reports.community_report --write   # COMMUNITIES.md
-python -m integrations.agent_memory.sync_cache --project <abs-path>   # optional pointer cache
+python -m integrations.agent_memory.sync_cache --project <abs-path> --target codex   # optional Codex pointer cache
+python -m integrations.agent_memory.sync_cache --project <abs-path> --target both    # migrate Claude + Codex together
 ```
 
 - If `wiki-index` prints a **dangling wikilink** warning, check whether that
@@ -116,7 +119,13 @@ preflight → llm → build → embed → graph → community → stale → heal
 python -m integrations.ingest.ingest_pipeline --dry-run --skip-llm  # print the exact commands, change nothing
 python -m integrations.ingest.ingest_pipeline --skip-llm            # run only the deterministic steps
 python -m integrations.ingest.ingest_pipeline                       # the daily run
+python -m integrations.ingest.ingest_pipeline --agent codex         # use Codex for the authoring step
 ```
+
+For Codex, the `llm` step uses `codex exec` in the vault workspace with
+`--sandbox workspace-write` and `--ask-for-approval never`. Every path listed in
+`[ingest] repos` is also passed as `--add-dir`, so Codex can inspect the source
+repositories while writing only the vault artifacts the prompt asks it to write.
 
 ### Failure semantics
 

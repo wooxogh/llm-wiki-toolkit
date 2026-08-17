@@ -178,6 +178,7 @@ def _gated_false_answers(cases: list, k: int, mode: str, rerank: int,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--v2", action="store_true", help="gate Concept/NET v2 metrics")
     ap.add_argument("--gold", default=None,
                     help="gold file (absolute path, or relative to the content root); "
                          "defaults to the vault's configured [eval] gold")
@@ -194,12 +195,50 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
+    if args.v2:
+        from llm_wiki.v2 import artifacts
+        from llm_wiki.v2.evaluation import evaluate
+        path = args.baseline if args.baseline != BASELINE_PATH else artifacts.artifact_path("v2_eval_baseline.json")
+        current = evaluate(VAULT_ROOT, args.gold, args.k)
+        if args.update:
+            path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"wrote v2 baseline: {path}")
+            return 0
+        if not path.exists():
+            print(f"no v2 baseline at {path}; create it with wiki-gate --v2 --update")
+            return 1
+        baseline = json.loads(path.read_text(encoding="utf-8"))
+        quality_metrics = (
+            "concept_precision", "concept_recall", "concept_faithfulness",
+            "placement_primary_accuracy", "placement_topk_route_recall",
+            "relation_precision", "relation_recall", "relation_f1",
+            "supersession_precision", "supersession_recall", "current_hit_at_k", "current_mrr",
+            "current_fact_accuracy", "historical_accuracy", "current_historical_hit_at_k", "mrr",
+        )
+        quality_metrics += tuple(name for name in baseline
+                                 if name.startswith("relation_")
+                                 and name.endswith(("_precision", "_recall", "_f1")))
+        tolerance = args.tolerance_pp / 100
+        regressions = []
+        for name in quality_metrics:
+            current_value, baseline_value = current.get(name), baseline.get(name)
+            if isinstance(current_value, (int, float)) and isinstance(baseline_value, (int, float)):
+                if current_value + tolerance < baseline_value:
+                    regressions.append(name)
+        if (current.get("outdated_answer_rate", 0) > baseline.get("outdated_answer_rate", 0)
+                or current.get("false_supersession_rate", 0) > baseline.get("false_supersession_rate", 0)
+                or current.get("false_auto_answers", 0) > baseline.get("false_auto_answers", 0)
+                or current.get("risky_unapproved", 0)):
+            regressions.append("safety")
+        print(json.dumps({"current": current, "regressions": regressions}, ensure_ascii=False, indent=2))
+        return 1 if regressions else 0
+
     current = measure(args.gold, args.k, args.mode, args.rerank, args.thresholds)
 
     if args.update:
         write_baseline(args.baseline, current)
-        print(f"✓ baseline written to {args.baseline} ({len(current)} slices)")
-        print("  ⚠ a baseline change must be justified by measurement — record it in the commit log")
+        print(f"OK: baseline written to {args.baseline} ({len(current)} slices)")
+        print("  WARNING: a baseline change must be justified by measurement - record it in the commit log")
         return 0
 
     regressions = compare(load_baseline(args.baseline), current, args.tolerance_pp)
@@ -210,12 +249,12 @@ def main() -> int:
         return 1 if regressions else 0
 
     for r in regressions:
-        print(f"❌ [{r.slice}] {r.metric}: {r.detail}", file=sys.stderr)
+        print(f"ERROR [{r.slice}] {r.metric}: {r.detail}", file=sys.stderr)
     if regressions:
-        print(f"\n❌ {len(regressions)} retrieval regression(s) vs {args.baseline.name}",
+        print(f"\nERROR: {len(regressions)} retrieval regression(s) vs {args.baseline.name}",
               file=sys.stderr)
         return 1
-    print(f"✓ no retrieval regression ({len(current)} slices vs {args.baseline.name})")
+    print(f"OK: no retrieval regression ({len(current)} slices vs {args.baseline.name})")
     return 0
 
 

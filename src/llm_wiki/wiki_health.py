@@ -26,6 +26,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from llm_wiki import build_index
+from llm_wiki import config
 from llm_wiki.paths import (VAULT_ROOT, content_paths, content_root, embeddings_dir,
                             index_path, page_hash, relative)
 
@@ -256,18 +257,31 @@ def check_content_warnings(vault: Path) -> list[HealthIssue]:
 # --------------------------------------------------------------------------
 
 
-def check_health(vault: Path = VAULT_ROOT, mode: str = "full") -> list[HealthIssue]:
+def check_health(vault: Path = VAULT_ROOT, mode: str = "full",
+                 v2_only: bool = False) -> list[HealthIssue]:
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {list(MODES)}")
-    issues = check_index_health(vault)
-    if issues and issues[0].code == "index-invalid":
-        # Downstream checks all assume parseable frontmatter.
-        return issues
-    if mode == "full":
-        issues.extend(check_embedding_health(vault))
-    issues.extend(check_report_health(vault))
-    issues.extend(check_community_health(vault))
-    issues.extend(check_content_warnings(vault))
+    issues: list[HealthIssue] = []
+    if not v2_only:
+        issues = check_index_health(vault)
+        if issues and issues[0].code == "index-invalid":
+            # Legacy downstream checks all assume parseable frontmatter.
+            return issues
+        if mode == "full":
+            issues.extend(check_embedding_health(vault))
+        issues.extend(check_report_health(vault))
+        issues.extend(check_community_health(vault))
+        issues.extend(check_content_warnings(vault))
+    try:
+        cfg = config.load(vault)
+    except config.ConfigError:
+        cfg = None
+    v2_root = content_root(vault) / ".llm_wiki_v2"
+    # v2 artifacts are lightweight local JSON/NumPy data; unlike the legacy
+    # page embedding store they are valid CI inputs and must not be skipped.
+    if v2_only or v2_root.exists() or (cfg and cfg.v2_enabled):
+        from llm_wiki.v2.health import check_v2_health
+        issues.extend(_error("v2-health", issue) for issue in check_v2_health(vault))
     return issues
 
 
@@ -275,11 +289,12 @@ def exit_code(issues: list[HealthIssue]) -> int:
     return 1 if any(i.severity == "error" for i in issues) else 0
 
 
-def report(vault: Path = VAULT_ROOT, mode: str = "full") -> dict:
-    issues = check_health(vault, mode)
+def report(vault: Path = VAULT_ROOT, mode: str = "full", v2_only: bool = False) -> dict:
+    issues = check_health(vault, mode, v2_only)
     return {
         "ok": exit_code(issues) == 0,
         "mode": mode,
+        "scope": "v2" if v2_only else "all",
         "errors": [asdict(i) for i in issues if i.severity == "error"],
         "warnings": [asdict(i) for i in issues if i.severity == "warning"],
     }
@@ -288,19 +303,21 @@ def report(vault: Path = VAULT_ROOT, mode: str = "full") -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="full", choices=list(MODES))
+    ap.add_argument("--v2", action="store_true",
+                    help="check only v2 source/Concept/index/NET artifacts; no YAML frontmatter required")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--vault", type=Path, default=VAULT_ROOT)
     args = ap.parse_args()
 
-    data = report(args.vault.resolve(), args.mode)
+    data = report(args.vault.resolve(), args.mode, args.v2)
     if args.json:
         print(json.dumps(data, ensure_ascii=False))
     else:
         for e in data["errors"]:
-            print(f"❌ [{e['code']}] {e['detail']}", file=sys.stderr)
+            print(f"ERROR [{e['code']}] {e['detail']}", file=sys.stderr)
         for w in data["warnings"]:
-            print(f"⚠ [{w['code']}] {w['detail']}", file=sys.stderr)
-        print(f"{'✓ healthy' if data['ok'] else '❌ unhealthy'} (mode={args.mode}, "
+            print(f"WARNING [{w['code']}] {w['detail']}", file=sys.stderr)
+        print(f"{'OK: healthy' if data['ok'] else 'ERROR: unhealthy'} (mode={args.mode}, scope={data['scope']}, "
               f"{len(data['errors'])} error(s), {len(data['warnings'])} warning(s))")
     return 0 if data["ok"] else 1
 

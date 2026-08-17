@@ -143,7 +143,7 @@ def main() -> int:
     events, errors = read_events(args.path)
     print(f"{len(events)} event(s) in {args.path}")
     for e in errors:
-        print(f"⚠ {e}")
+        print(f"WARNING: {e}")
     return 1 if errors else 0
 
 

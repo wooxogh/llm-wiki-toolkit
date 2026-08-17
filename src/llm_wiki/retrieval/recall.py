@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -77,6 +78,8 @@ def run_auto(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("query")
+    ap.add_argument("--v2", action="store_true", help="recall over v2 atomic concepts")
+    ap.add_argument("--vault", type=Path, help="v2 vault path (legacy mode uses WIKI_VAULT)")
     ap.add_argument("--k", type=int, default=8)
     ap.add_argument("--layer", help="filter: domain|pattern|entity|raw")
     ap.add_argument("--domain", help="filter: e.g. research|tooling (vault-specific)")
@@ -84,6 +87,8 @@ def main() -> int:
     ap.add_argument("--confidence", help="filter: confirmed|provisional")
     ap.add_argument("--status", default="active",
                     help="active (default) | superseded | any")
+    ap.add_argument("--historical", action="store_true",
+                    help="v2 only: include superseded and archived concepts")
     ap.add_argument("--mode", default="hybrid", choices=["hybrid", "dense"])
     ap.add_argument("--rerank", type=int, default=0,
                     help="candidate pool for local cross-encoder rerank (0=off; e.g. 10)")
@@ -101,14 +106,25 @@ def main() -> int:
                     help="annotate the recorded event with an outcome label")
     args = ap.parse_args()
 
-    if args.auto:
-        return run_auto(args)
+    try:
+        if args.v2:
+            from llm_wiki.v2.query import run_cli_query
+            return run_cli_query(args.query, vault=args.vault, k=args.k,
+                                 historical=args.historical or args.status == "any",
+                                 as_json=args.json, auto=args.auto,
+                                 thresholds_path=args.thresholds, rerank=args.rerank)
+        if args.auto:
+            return run_auto(args)
 
-    status = None if args.status == "any" else args.status
-    started = time.perf_counter()
-    ranked = search(args.query, k=args.k, layer=args.layer, domain=args.domain,
-                    mode=args.mode, rerank=args.rerank, project=args.project,
-                    status=status, confidence=args.confidence)
+        status = None if args.status == "any" else args.status
+        started = time.perf_counter()
+        ranked = search(args.query, k=args.k, layer=args.layer, domain=args.domain,
+                        mode=args.mode, rerank=args.rerank, project=args.project,
+                        status=status, confidence=args.confidence)
+    except RuntimeError as exc:
+        print(f"wiki-recall: {exc}", file=sys.stderr)
+        return 1
+
     latency_ms = (time.perf_counter() - started) * 1000
 
     if args.json:

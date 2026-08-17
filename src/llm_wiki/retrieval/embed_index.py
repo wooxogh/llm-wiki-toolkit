@@ -204,7 +204,7 @@ def main():
         for i, text in enumerate(page_chunks(fm, body, _id)):
             new_texts.append(text)
             new_meta.append(chunk_metadata(fm, _id, rel, i, body_chunks[i]))
-    new_vecs = embed_passages(new_texts) if new_texts else None
+    new_vecs = embed_passages(new_texts, show_progress=True) if new_texts else None
 
     # combine
     parts = [v for v in (kept_vecs, new_vecs) if v is not None and len(v)]
@@ -219,7 +219,7 @@ def main():
     (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     (OUT / "pages.json").write_text(json.dumps(hashes, ensure_ascii=False), encoding="utf-8")
     (OUT / "model.txt").write_text(identity, encoding="utf-8")
-    print(f"✓ {len(meta)} chunks / {len(pages)} pages -> .embeddings/ "
+    print(f"OK: {len(meta)} chunks / {len(pages)} pages -> .embeddings/ "
           f"(dim={vecs.shape[1]}, embedded {len(new_texts)} new)")
 
 

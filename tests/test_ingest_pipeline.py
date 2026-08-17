@@ -10,7 +10,9 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
-from integrations.ingest.ingest_pipeline import PipelineConfig, Step, run_pipeline
+import pytest
+
+from integrations.ingest.ingest_pipeline import PipelineConfig, Step, authoring_argv, run_pipeline
 
 TRACE = "trace.txt"
 STEP_NAMES = ("build", "embed", "graph", "community", "stale", "health", "commit")
@@ -231,6 +233,26 @@ def test_skip_llm_false_adds_the_authoring_step_right_after_preflight(tmp_path):
                                     repos=("/tmp/example-repo",))
 
     assert [s.name for s in config.steps[:3]] == ["preflight", "llm", "build"]
+
+
+def test_codex_authoring_step_uses_exec_and_adds_repo_read_roots(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    config = PipelineConfig.default(vault=tmp_path, today="2026-07-31",
+                                    stamp_path=tmp_path / "stamp", skip_llm=False,
+                                    repos=(repo,), agent="codex")
+
+    argv = config.steps[1].argv
+    assert argv[:2] == ("codex", "exec")
+    assert ("--cd", str(tmp_path)) in zip(argv, argv[1:])
+    assert ("--sandbox", "workspace-write") in zip(argv, argv[1:])
+    assert ("--ask-for-approval", "never") in zip(argv, argv[1:])
+    assert ("--add-dir", str(repo.resolve())) in zip(argv, argv[1:])
+
+
+def test_unknown_authoring_agent_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="unknown agent"):
+        authoring_argv("other", tmp_path, ())
 
 
 def test_output_fatal_steps_are_exactly_preflight_and_stale(tmp_path):
