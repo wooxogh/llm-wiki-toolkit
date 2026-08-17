@@ -12,8 +12,9 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from llm_wiki import config
 from llm_wiki.v2.models import Chunk, Concept, ConceptProposal, PlacementProposal, RelationProposal
@@ -40,6 +41,22 @@ class UserLLMAdapter(Protocol):
         ...
 
 
+MAX_RETRIES = int(os.environ.get("WIKI_V2_LLM_MAX_RETRIES", "3"))
+RETRY_BASE_DELAY = float(os.environ.get("WIKI_V2_LLM_RETRY_BASE_DELAY", "2.0"))
+
+
+def _retry(call: Callable[[], dict], sleep=time.sleep) -> dict:
+    last_exc: RuntimeError | None = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            return call()
+        except RuntimeError as exc:
+            last_exc = exc
+            if attempt < MAX_RETRIES - 1:
+                sleep(RETRY_BASE_DELAY * (2 ** attempt))
+    raise last_exc
+
+
 class CommandUserLLMAdapter:
     """Provider-neutral JSON-lines adapter for Codex, Claude, or a local command.
 
@@ -55,6 +72,9 @@ class CommandUserLLMAdapter:
         self.model_identity = model_identity or os.environ.get("WIKI_V2_LLM_MODEL", self.command)
 
     def _call(self, task: str, payload: dict) -> dict:
+        return _retry(lambda: self._call_once(task, payload))
+
+    def _call_once(self, task: str, payload: dict) -> dict:
         request = json.dumps({"task": task, "payload": payload}, ensure_ascii=False)
         result = subprocess.run(shlex.split(self.command), input=request, text=True,
                                 encoding="utf-8", capture_output=True, timeout=180)
@@ -121,6 +141,9 @@ class AgentCLIUserLLMAdapter(CommandUserLLMAdapter):
         self.model_identity = os.environ.get("WIKI_V2_LLM_MODEL", f"{agent}-cli-default")
 
     def _call(self, task: str, payload: dict) -> dict:
+        return _retry(lambda: self._call_once(task, payload))
+
+    def _call_once(self, task: str, payload: dict) -> dict:
         executable = shutil.which(self.agent)
         if not executable:
             raise RuntimeError(
