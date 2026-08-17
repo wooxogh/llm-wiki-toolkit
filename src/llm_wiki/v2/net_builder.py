@@ -162,23 +162,31 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
                         progress: NetProgress | None = None,
                         dirty_ids: set[str] | None = None) -> None:
     terminal = {proposal.id for proposal in store.proposals() if proposal.status in {"APPROVED", "REJECTED"}}
-    pairs = []
-    for index, source in enumerate(concepts, start=1):
-        pairs.extend((source, target) for target in discover(
-            store.vault, source, concepts, cfg.v2_relation_candidate_topk))
-        if progress:
-            progress("candidates", index, len(concepts), source.summary or source.id)
+    pairs = _candidate_pairs(store.vault, concepts, cfg.v2_relation_candidate_topk,
+                             cfg.v2_relation_candidate_min_score, progress)
     for index, (source, target) in enumerate(pairs, start=1):
         if dirty_ids is not None and source.id not in dirty_ids and target.id not in dirty_ids:
             continue
-        relation = classify(adapter, source, target)
-        temporal = resolve(adapter, source, target, relation)
+        relation = classify(adapter, source, target, vault=store.vault)
+        temporal = resolve(adapter, source, target, relation, vault=store.vault)
         for proposal in (relation, temporal):
             if proposal is not None and proposal.id not in terminal:
                 submit_relation_proposal(store, proposal, cfg.v2_safe_relation_min_confidence,
                                          cfg.v2_require_user_approval)
         if progress:
             progress("relations", index, len(pairs), f"{source.id} -> {target.id}")
+
+
+def _candidate_pairs(vault, concepts, topk: int, min_score: float,
+                     progress: NetProgress | None = None) -> list[tuple]:
+    pairs = []
+    for index, source in enumerate(concepts, start=1):
+        for score, target in discover(vault, source, concepts, topk):
+            if score >= min_score:
+                pairs.append((source, target))
+        if progress:
+            progress("candidates", index, len(concepts), source.summary or source.id)
+    return pairs
 
 
 def _concept_text_hash(concept) -> str:

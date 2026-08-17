@@ -95,6 +95,7 @@ class Config:
     v2_embed_device: str
     v2_chunk_target_chars: int
     v2_relation_candidate_topk: int
+    v2_relation_candidate_min_score: float
     v2_safe_relation_min_confidence: float
     v2_allow_ai_topic_creation: bool
     v2_require_user_approval: tuple
@@ -233,6 +234,9 @@ def load(root: Path | None = None) -> Config:
     v2_relation_candidate_topk = v2.get("relation_candidate_topk", 10)
     if not isinstance(v2_relation_candidate_topk, int) or v2_relation_candidate_topk <= 0:
         raise ConfigError("[v2] relation_candidate_topk must be a positive integer")
+    v2_relation_candidate_min_score = v2.get("relation_candidate_min_score", 0.0)
+    if not isinstance(v2_relation_candidate_min_score, (int, float)) or v2_relation_candidate_min_score < 0:
+        raise ConfigError("[v2] relation_candidate_min_score must be a non-negative number")
     v2_safe_relation_min_confidence = v2.get("safe_relation_min_confidence", 0.90)
     if not isinstance(v2_safe_relation_min_confidence, (int, float)):
         raise ConfigError("[v2] safe_relation_min_confidence must be a number")
@@ -267,6 +271,7 @@ def load(root: Path | None = None) -> Config:
         v2_embed_device=v2_embed_device,
         v2_chunk_target_chars=v2_chunk_target_chars,
         v2_relation_candidate_topk=v2_relation_candidate_topk,
+        v2_relation_candidate_min_score=float(v2_relation_candidate_min_score),
         v2_safe_relation_min_confidence=float(v2_safe_relation_min_confidence),
         v2_allow_ai_topic_creation=v2_allow_ai_topic_creation,
         v2_require_user_approval=v2_require_user_approval,
