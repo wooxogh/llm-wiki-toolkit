@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
@@ -162,23 +163,58 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
                         progress: NetProgress | None = None,
                         dirty_ids: set[str] | None = None) -> None:
     terminal = {proposal.id for proposal in store.proposals() if proposal.status in {"APPROVED", "REJECTED"}}
-    pairs = []
-    for index, source in enumerate(concepts, start=1):
-        pairs.extend((source, target) for target in discover(
-            store.vault, source, concepts, cfg.v2_relation_candidate_topk))
-        if progress:
-            progress("candidates", index, len(concepts), source.summary or source.id)
-    for index, (source, target) in enumerate(pairs, start=1):
-        if dirty_ids is not None and source.id not in dirty_ids and target.id not in dirty_ids:
-            continue
-        relation = classify(adapter, source, target)
-        temporal = resolve(adapter, source, target, relation)
-        for proposal in (relation, temporal):
-            if proposal is not None and proposal.id not in terminal:
+    pairs = _candidate_pairs(store.vault, concepts, cfg.v2_relation_candidate_topk,
+                             cfg.v2_relation_candidate_min_score, progress)
+    if dirty_ids is not None:
+        pairs = [(source, target) for source, target in pairs
+                if source.id in dirty_ids or target.id in dirty_ids]
+    total = len(pairs)
+    # Every submit_relation_proposal() call below happens on THIS thread, no
+    # matter how _compute_relation_proposals computes its results (serially
+    # today, optionally concurrently once a worker count is threaded in) —
+    # NetStore's append/upsert methods do an unlocked read-modify-write and
+    # are not safe to call from more than one thread.
+    for index, (source, target, proposals) in enumerate(
+        _compute_relation_proposals(pairs, adapter, store.vault, cfg.v2_relation_concurrency), start=1
+    ):
+        for proposal in proposals:
+            if proposal.id not in terminal:
                 submit_relation_proposal(store, proposal, cfg.v2_safe_relation_min_confidence,
                                          cfg.v2_require_user_approval)
         if progress:
-            progress("relations", index, len(pairs), f"{source.id} -> {target.id}")
+            progress("relations", index, total, f"{source.id} -> {target.id}")
+
+
+def _classify_pair(adapter, vault, source, target):
+    relation = classify(adapter, source, target, vault=vault)
+    temporal = resolve(adapter, source, target, relation, vault=vault)
+    return source, target, [p for p in (relation, temporal) if p is not None]
+
+
+def _compute_relation_proposals(pairs, adapter, vault, workers: int = 1):
+    if workers <= 1:
+        for source, target in pairs:
+            yield _classify_pair(adapter, vault, source, target)
+        return
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futures = [pool.submit(_classify_pair, adapter, vault, source, target) for source, target in pairs]
+        for future in as_completed(futures):
+            yield future.result()
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _candidate_pairs(vault, concepts, topk: int, min_score: float,
+                     progress: NetProgress | None = None) -> list[tuple]:
+    pairs = []
+    for index, source in enumerate(concepts, start=1):
+        for score, target in discover(vault, source, concepts, topk):
+            if score >= min_score:
+                pairs.append((source, target))
+        if progress:
+            progress("candidates", index, len(concepts), source.summary or source.id)
+    return pairs
 
 
 def _concept_text_hash(concept) -> str:
