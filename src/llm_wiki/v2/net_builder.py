@@ -171,8 +171,8 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
     for index, (source, target) in enumerate(pairs, start=1):
         if dirty_ids is not None and source.id not in dirty_ids and target.id not in dirty_ids:
             continue
-        relation = classify(adapter, source, target)
-        temporal = resolve(adapter, source, target, relation)
+        relation = classify(adapter, source, target, vault=store.vault)
+        temporal = resolve(adapter, source, target, relation, vault=store.vault)
         for proposal in (relation, temporal):
             if proposal is not None and proposal.id not in terminal:
                 submit_relation_proposal(store, proposal, cfg.v2_safe_relation_min_confidence,
