@@ -46,6 +46,8 @@ RETRY_BASE_DELAY = float(os.environ.get("WIKI_V2_LLM_RETRY_BASE_DELAY", "2.0"))
 
 
 def _retry(call: Callable[[], dict], sleep=time.sleep) -> dict:
+    if MAX_RETRIES <= 0:
+        raise RuntimeError(f"WIKI_V2_LLM_MAX_RETRIES must be > 0, got {MAX_RETRIES}")
     last_exc: RuntimeError | None = None
     for attempt in range(MAX_RETRIES):
         try:
@@ -72,7 +74,7 @@ class CommandUserLLMAdapter:
         self.model_identity = model_identity or os.environ.get("WIKI_V2_LLM_MODEL", self.command)
 
     def _call(self, task: str, payload: dict) -> dict:
-        return _retry(lambda: self._call_once(task, payload))
+        return _retry(lambda: self._call_once(task, payload), sleep=time.sleep)
 
     def _call_once(self, task: str, payload: dict) -> dict:
         request = json.dumps({"task": task, "payload": payload}, ensure_ascii=False)
@@ -141,7 +143,7 @@ class AgentCLIUserLLMAdapter(CommandUserLLMAdapter):
         self.model_identity = os.environ.get("WIKI_V2_LLM_MODEL", f"{agent}-cli-default")
 
     def _call(self, task: str, payload: dict) -> dict:
-        return _retry(lambda: self._call_once(task, payload))
+        return _retry(lambda: self._call_once(task, payload), sleep=time.sleep)
 
     def _call_once(self, task: str, payload: dict) -> dict:
         executable = shutil.which(self.agent)
