@@ -42,7 +42,7 @@ def main() -> int:
         print(f"[concepts] phase 2/2: embedding {len(concepts)} Concept(s) "
               f"with {backend} on {device}",
               file=sys.stderr, flush=True)
-        indexed = build_index(args.vault, show_progress=True)
+        indexed = build_index(args.vault, show_progress=True, changed_only=args.changed)
         print(f"built v2 concepts: {len(docs)} document(s), {len(chunks)} chunk(s), {len(concepts)} concept(s), {indexed} indexed")
     return 0
 

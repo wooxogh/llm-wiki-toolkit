@@ -1,8 +1,11 @@
 import json
 from dataclasses import replace
 
+import numpy as np
+
 from llm_wiki.v2.chunking import chunk_document
 from llm_wiki.v2.concept_extraction import extract
+from llm_wiki.v2 import concept_index
 from llm_wiki.v2.concept_index import build_index
 from llm_wiki.v2.concept_store import build_concepts, read_concepts
 from llm_wiki.v2.evaluation import evaluate
@@ -109,3 +112,60 @@ def test_changed_build_preserves_unchanged_document_concepts(tmp_path):
     build_concepts(root, changed_only=True)
     after = {c.id for c in read_concepts(root) if c.document_id == "second"}
     assert after == before
+
+
+def test_changed_index_embeds_only_new_concepts(tmp_path, monkeypatch):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    index_root = root / ".llm_wiki_v2" / "concept_embeddings"
+    before_meta = json.loads((index_root / "meta.json").read_text(encoding="utf-8"))
+    before_vectors = np.load(index_root / "vectors.npy").copy()
+
+    (root / "domain" / "new.md").write_text(
+        "---\nid: new\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: new\n---\n# New\n\nNew service uses Redis.",
+        encoding="utf-8",
+    )
+    build_concepts(root, changed_only=True)
+
+    original = concept_index._embed_passages
+    embedded_batches = []
+
+    def tracked_embed(texts, vault=None, show_progress=False):
+        embedded_batches.append(len(texts))
+        return original(texts, vault, show_progress)
+
+    monkeypatch.setattr(concept_index, "_embed_passages", tracked_embed)
+    build_index(root, changed_only=True)
+
+    after_meta = json.loads((index_root / "meta.json").read_text(encoding="utf-8"))
+    after_vectors = np.load(index_root / "vectors.npy")
+    before_by_id = {row["concept_id"]: index for index, row in enumerate(before_meta)}
+    after_by_id = {row["concept_id"]: index for index, row in enumerate(after_meta)}
+    unchanged_ids = set(before_by_id) & set(after_by_id)
+    assert embedded_batches == [1]
+    assert all(np.array_equal(before_vectors[before_by_id[id_]], after_vectors[after_by_id[id_]])
+               for id_ in unchanged_ids)
+
+
+def test_changed_index_rebuilds_when_index_identity_changes(tmp_path, monkeypatch):
+    root = vault(tmp_path)
+    build_concepts(root)
+    build_index(root)
+    identity_path = root / ".llm_wiki_v2" / "concept_embeddings" / "identity.json"
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["indexed_text_schema"] = "changed"
+    identity_path.write_text(json.dumps(identity), encoding="utf-8")
+
+    original = concept_index._embed_passages
+    embedded_batches = []
+
+    def tracked_embed(texts, vault=None, show_progress=False):
+        embedded_batches.append(len(texts))
+        return original(texts, vault, show_progress)
+
+    monkeypatch.setattr(concept_index, "_embed_passages", tracked_embed)
+    build_index(root, changed_only=True)
+
+    assert embedded_batches == [len(read_concepts(root))]
