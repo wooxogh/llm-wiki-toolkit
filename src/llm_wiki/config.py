@@ -49,6 +49,7 @@ _KNOWN = {
         "embed_device",
         "chunk_target_chars",
         "relation_candidate_topk",
+        "relation_candidate_min_score",
         "relation_concurrency",
         "safe_relation_min_confidence",
         "allow_ai_topic_creation",

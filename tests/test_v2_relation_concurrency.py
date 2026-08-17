@@ -55,23 +55,41 @@ def test_default_workers_stays_single_threaded(tmp_path: Path):
     assert adapter.threads == {threading.get_ident()}
 
 
-def test_concurrent_build_commits_every_expected_proposal(tmp_path: Path):
+def _build_fixture_vault(vault: Path, relation_concurrency: int) -> None:
     from llm_wiki.v2.concept_store import build_concepts
     from llm_wiki.v2.net_builder import build_net
 
-    (tmp_path / "wiki.toml").write_text(
-        '[vault]\ncontent_dirs = ["domain"]\n\n[v2]\nenabled = true\nrelation_concurrency = 4\n'
+    vault.mkdir(parents=True, exist_ok=True)
+    (vault / "wiki.toml").write_text(
+        '[vault]\ncontent_dirs = ["domain"]\n\n[v2]\nenabled = true\n'
+        f'relation_concurrency = {relation_concurrency}\n'
         'safe_relation_min_confidence = 0.0\n', encoding="utf-8")
-    (tmp_path / "domain").mkdir()
+    (vault / "domain").mkdir()
     for i in range(6):
-        (tmp_path / "domain" / f"doc{i}.md").write_text(
+        (vault / "domain" / f"doc{i}.md").write_text(
             f"---\nid: doc{i}\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\nstatus: active\nsummary: doc {i}\n---\n"
             f"# Doc {i}\n\nFrontend uses React in service {i}.",
             encoding="utf-8")
-    build_concepts(tmp_path)
-    store = build_net(tmp_path, adapter=_ThreadRecordingAdapter())
-    proposals = store.proposals()
-    # A lost update from the read-modify-write race this plan guards against
-    # would show up here as duplicate/overwritten ids or a short list.
-    assert len(proposals) > 0
-    assert len(proposals) == len({proposal.id for proposal in proposals})
+    build_concepts(vault)
+    build_net(vault, adapter=_ThreadRecordingAdapter())
+
+
+def test_concurrent_build_commits_every_expected_proposal(tmp_path: Path):
+    serial_vault = tmp_path / "serial"
+    concurrent_vault = tmp_path / "concurrent"
+    _build_fixture_vault(serial_vault, relation_concurrency=1)
+    _build_fixture_vault(concurrent_vault, relation_concurrency=4)
+
+    serial_proposals = (serial_vault / ".llm_wiki_v2" / "net" / "proposals.jsonl").read_text(encoding="utf-8")
+    concurrent_proposals = (concurrent_vault / ".llm_wiki_v2" / "net" / "proposals.jsonl").read_text(encoding="utf-8")
+    serial_edges = (serial_vault / ".llm_wiki_v2" / "net" / "edges.jsonl").read_text(encoding="utf-8")
+    concurrent_edges = (concurrent_vault / ".llm_wiki_v2" / "net" / "edges.jsonl").read_text(encoding="utf-8")
+
+    # NetStore sorts proposals/edges by id before every write, so a lost
+    # update from the read-modify-write race this plan guards against would
+    # show up here as a byte-level divergence between the two runs (missing
+    # or overwritten lines), not merely as duplicate ids.
+    assert serial_proposals != ""
+    assert serial_proposals == concurrent_proposals
+    assert serial_edges != ""
+    assert serial_edges == concurrent_edges
