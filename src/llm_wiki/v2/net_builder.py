@@ -164,17 +164,35 @@ def _discover_relations(store: NetStore, concepts, adapter, cfg,
     terminal = {proposal.id for proposal in store.proposals() if proposal.status in {"APPROVED", "REJECTED"}}
     pairs = _candidate_pairs(store.vault, concepts, cfg.v2_relation_candidate_topk,
                              cfg.v2_relation_candidate_min_score, progress)
-    for index, (source, target) in enumerate(pairs, start=1):
-        if dirty_ids is not None and source.id not in dirty_ids and target.id not in dirty_ids:
-            continue
-        relation = classify(adapter, source, target, vault=store.vault)
-        temporal = resolve(adapter, source, target, relation, vault=store.vault)
-        for proposal in (relation, temporal):
-            if proposal is not None and proposal.id not in terminal:
+    if dirty_ids is not None:
+        pairs = [(source, target) for source, target in pairs
+                if source.id in dirty_ids or target.id in dirty_ids]
+    total = len(pairs)
+    # Every submit_relation_proposal() call below happens on THIS thread, no
+    # matter how _compute_relation_proposals computes its results (serially
+    # today, optionally concurrently once a worker count is threaded in) —
+    # NetStore's append/upsert methods do an unlocked read-modify-write and
+    # are not safe to call from more than one thread.
+    for index, (source, target, proposals) in enumerate(
+        _compute_relation_proposals(pairs, adapter, store.vault), start=1
+    ):
+        for proposal in proposals:
+            if proposal.id not in terminal:
                 submit_relation_proposal(store, proposal, cfg.v2_safe_relation_min_confidence,
                                          cfg.v2_require_user_approval)
         if progress:
-            progress("relations", index, len(pairs), f"{source.id} -> {target.id}")
+            progress("relations", index, total, f"{source.id} -> {target.id}")
+
+
+def _classify_pair(adapter, vault, source, target):
+    relation = classify(adapter, source, target, vault=vault)
+    temporal = resolve(adapter, source, target, relation, vault=vault)
+    return source, target, [p for p in (relation, temporal) if p is not None]
+
+
+def _compute_relation_proposals(pairs, adapter, vault):
+    for source, target in pairs:
+        yield _classify_pair(adapter, vault, source, target)
 
 
 def _candidate_pairs(vault, concepts, topk: int, min_score: float,
