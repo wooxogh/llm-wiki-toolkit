@@ -111,6 +111,24 @@ def test_changed_build_removes_deleted_document_artifacts(tmp_path):
     assert all(concept.document_id == "policy" for concept in concepts)
 
 
+def test_full_then_incremental_build_remains_healthy(tmp_path):
+    vault = _vault(tmp_path)
+    build_concepts(vault)
+    build_index(vault)
+    build_net(vault)
+
+    (vault / "domain" / "new.md").write_text(
+        "---\nid: new\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: new\n---\n# New\n\nNew service uses Redis.",
+        encoding="utf-8",
+    )
+    build_concepts(vault, changed_only=True)
+    build_index(vault, changed_only=True)
+    build_net(vault, changed_only=True)
+
+    assert check_v2_health(vault) == []
+
+
 def test_models_reject_unknown_artifact_fields():
     with pytest.raises(ValueError, match="unknown field"):
         NetNode.from_dict({"id": "topic:a", "type": "TOPIC", "label": "A", "future": True})
