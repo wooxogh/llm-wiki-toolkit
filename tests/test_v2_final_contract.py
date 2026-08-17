@@ -8,6 +8,7 @@ import pytest
 from llm_wiki import config
 from llm_wiki.v2 import artifacts
 from llm_wiki.v2.chunking import chunk_document
+from llm_wiki.v2 import concept_store
 from llm_wiki.v2.concept_index import build_index
 from llm_wiki.v2.concept_store import build_concepts, read_concepts
 from llm_wiki.v2.health import check_v2_health
@@ -65,6 +66,49 @@ def test_changed_build_rebuilds_when_chunk_target_changes(tmp_path):
     build_concepts(vault, target_chars=700)
     _, chunks, _ = build_concepts(vault, target_chars=321, changed_only=True)
     assert chunks and all(chunk.target_chars == 321 for chunk in chunks)
+
+
+def test_changed_build_does_not_chunk_unchanged_documents(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    second = vault / "domain" / "other.md"
+    second.write_text(
+        "---\nid: other\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: other\n---\n# Other\n\nOther value is stable.",
+        encoding="utf-8",
+    )
+    build_concepts(vault)
+    policy = vault / "domain" / "policy.md"
+    policy.write_text(policy.read_text(encoding="utf-8") + "\nNew policy value is 3.", encoding="utf-8")
+
+    original = concept_store.chunk_document
+    calls = []
+
+    def tracked_chunk(document_id, path, raw, target_chars):
+        calls.append(path)
+        return original(document_id, path, raw, target_chars)
+
+    monkeypatch.setattr(concept_store, "chunk_document", tracked_chunk)
+    build_concepts(vault, changed_only=True)
+
+    assert calls == ["domain/policy.md"]
+
+
+def test_changed_build_removes_deleted_document_artifacts(tmp_path):
+    vault = _vault(tmp_path)
+    second = vault / "domain" / "other.md"
+    second.write_text(
+        "---\nid: other\nlayer: domain\nprojects: []\ntags: []\nconfidence: confirmed\n"
+        "status: active\nsummary: other\n---\n# Other\n\nOther value is stable.",
+        encoding="utf-8",
+    )
+    build_concepts(vault)
+    second.unlink()
+
+    docs, chunks, concepts = build_concepts(vault, changed_only=True)
+
+    assert {doc.id for doc in docs} == {"policy"}
+    assert all(chunk.document_id == "policy" for chunk in chunks)
+    assert all(concept.document_id == "policy" for concept in concepts)
 
 
 def test_models_reject_unknown_artifact_fields():
