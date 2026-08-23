@@ -5,10 +5,20 @@ from dataclasses import replace
 
 from llm_wiki.v2.llm_adapter import UserLLMAdapter
 from llm_wiki.v2.models import Concept, RelationProposal
+from llm_wiki.v2 import relation_cache
 from llm_wiki.v2.schemas import RELATION_PROMPT_VERSION, RISKY_RELATIONS, RelationType
 
 
-def classify(adapter: UserLLMAdapter, source: Concept, target: Concept) -> RelationProposal | None:
+def classify(adapter: UserLLMAdapter, source: Concept, target: Concept,
+            vault=None) -> RelationProposal | None:
+    return relation_cache.cached_call(
+        "classify", source, target, RELATION_PROMPT_VERSION,
+        getattr(adapter, "model_identity", "offline"),
+        lambda: _classify_uncached(adapter, source, target), vault,
+    )
+
+
+def _classify_uncached(adapter: UserLLMAdapter, source: Concept, target: Concept) -> RelationProposal | None:
     proposal = adapter.classify_relation(source, target)
     if proposal is None:
         return None

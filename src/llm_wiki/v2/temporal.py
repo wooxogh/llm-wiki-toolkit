@@ -6,13 +6,22 @@ from datetime import datetime
 
 from llm_wiki.v2.llm_adapter import UserLLMAdapter
 from llm_wiki.v2.models import Concept, RelationProposal
+from llm_wiki.v2 import relation_cache
 from llm_wiki.v2.schemas import TEMPORAL_PROMPT_VERSION, RelationType
 
 
 def resolve(adapter: UserLLMAdapter, source: Concept, target: Concept,
-            relation: RelationProposal | None = None) -> RelationProposal | None:
-    if relation and relation.relation not in {RelationType.CONTRADICTS.value, RelationType.SUPERSEDES.value, RelationType.OVERRIDES.value}:
+            relation: RelationProposal | None = None, vault=None) -> RelationProposal | None:
+    if relation is None or relation.relation not in {RelationType.CONTRADICTS.value, RelationType.SUPERSEDES.value, RelationType.OVERRIDES.value}:
         return None
+    return relation_cache.cached_call(
+        "resolve", source, target, TEMPORAL_PROMPT_VERSION,
+        getattr(adapter, "model_identity", "offline"),
+        lambda: _resolve_uncached(adapter, source, target), vault,
+    )
+
+
+def _resolve_uncached(adapter: UserLLMAdapter, source: Concept, target: Concept) -> RelationProposal | None:
     proposal = adapter.resolve_temporal(source, target)
     if proposal is None:
         return None

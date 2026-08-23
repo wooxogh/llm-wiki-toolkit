@@ -58,6 +58,20 @@ def test_invalid_v2_embedding_setting_is_rejected(tmp_path, key, value):
         config.load(tmp_path)
 
 
+def test_relation_candidate_min_score_is_configurable(tmp_path):
+    write_toml(tmp_path, "[v2]\nrelation_candidate_min_score = 0.02\n")
+    cfg = config.load(tmp_path)
+    assert cfg.v2_relation_candidate_min_score == 0.02
+
+
+def test_wiki_toml_example_loads_without_error(tmp_path):
+    example = Path(__file__).resolve().parent.parent / "wiki.toml.example"
+    write_toml(tmp_path, example.read_text(encoding="utf-8"))
+    (tmp_path / "domain").mkdir()
+    cfg = config.load(tmp_path)
+    assert cfg.v2_relation_candidate_min_score == 0.0
+
+
 def test_unknown_ingest_agent_is_rejected(tmp_path):
     write_toml(tmp_path, '[ingest]\nagent = "other"\n')
     with pytest.raises(config.ConfigError, match="agent"):

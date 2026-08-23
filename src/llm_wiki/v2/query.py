@@ -17,7 +17,7 @@ RRF_K = 60
 
 
 def recall(vault: Path | None, query: str, k: int = 8, historical: bool = False,
-           rerank: int = 0) -> list[dict]:
+           rerank: int = 0, seeds: list[tuple[float, Concept]] | None = None) -> list[dict]:
     """Soft-route through NET, then fuse semantic/text seeds and graph evidence.
 
     Tree routing deliberately only adds a rank signal. A bad auto-placement must
@@ -27,14 +27,16 @@ def recall(vault: Path | None, query: str, k: int = 8, historical: bool = False,
     if not concepts:
         return []
     _fail_closed(vault)
-    seeds = concept_index.search(vault, query, k=max(k * 5, 30))
+    if seeds is None:
+        seeds = concept_index.search(vault, query, k=max(k * 5, 30))
     scores = _rrf_scores(seeds)
     store = NetStore(vault)
-    nodes = {node.id: node for node in store.nodes()}
-    tree = _tree_scores(query, store)
+    nodes = store.nodes()
+    edges = store.edges()
+    tree = _tree_scores(query, nodes, edges)
     for concept_id, value in tree.items():
         scores[concept_id] = scores.get(concept_id, 0.0) + value
-    for concept_id, value in _graph_scores(scores, store, historical).items():
+    for concept_id, value in _graph_scores(scores, edges, historical).items():
         scores[concept_id] = scores.get(concept_id, 0.0) + value
     by_id = {concept.id: concept for concept in concepts}
     if historical:
@@ -47,7 +49,7 @@ def recall(vault: Path | None, query: str, k: int = 8, historical: bool = False,
         concept = by_id.get(concept_id)
         if not concept or (not historical and concept.state in {ConceptState.SUPERSEDED.value, ConceptState.ARCHIVED.value, ConceptState.DUPLICATE.value}):
             continue
-        evidence = _evidence(concept_id, store)
+        evidence = _evidence(concept_id, edges)
         warning = None
         if concept.state == ConceptState.DISPUTED.value:
             warning = "DISPUTED: review contradiction evidence before relying on this concept"
@@ -95,13 +97,13 @@ def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[\w가-힣]+", text.lower()))
 
 
-def _tree_scores(query: str, store: NetStore) -> dict[str, float]:
+def _tree_scores(query: str, nodes: list, edges: list) -> dict[str, float]:
     q = _tokens(query)
     if not q:
         return {}
-    topic_relevance = {node.id: len(q & _tokens(node.label)) for node in store.nodes()}
+    topic_relevance = {node.id: len(q & _tokens(node.label)) for node in nodes}
     out: dict[str, float] = {}
-    for edge in store.edges():
+    for edge in edges:
         if edge.type in {EdgeType.PRIMARY_TOPIC_OF.value, EdgeType.SECONDARY_TOPIC_OF.value}:
             rel = topic_relevance.get(edge.source, 0)
             if rel:
@@ -109,13 +111,13 @@ def _tree_scores(query: str, store: NetStore) -> dict[str, float]:
     return out
 
 
-def _graph_scores(seed_scores: dict[str, float], store: NetStore, historical: bool) -> dict[str, float]:
+def _graph_scores(seed_scores: dict[str, float], edges: list, historical: bool) -> dict[str, float]:
     out: dict[str, float] = {}
     allowed = {RelationType.SUPPORTS.value, RelationType.COMPLEMENTS.value, RelationType.DUPLICATE_OF.value}
     if historical:
         allowed.add(RelationType.SUPERSEDES.value)
     top = {concept_id for concept_id, _ in sorted(seed_scores.items(), key=lambda row: -row[1])[:12]}
-    for edge in store.edges():
+    for edge in edges:
         if edge.type != EdgeType.RELATES_TO.value or edge.relation not in allowed:
             continue
         if edge.source in top:
@@ -125,20 +127,21 @@ def _graph_scores(seed_scores: dict[str, float], store: NetStore, historical: bo
     return out
 
 
-def _evidence(concept_id: str, store: NetStore) -> list[dict]:
+def _evidence(concept_id: str, edges: list) -> list[dict]:
     return [{"relation": edge.relation, "concept_id": edge.target if edge.source == concept_id else edge.source}
-            for edge in store.edges()
+            for edge in edges
             if edge.type == EdgeType.RELATES_TO.value and concept_id in {edge.source, edge.target}]
 
 
 def auto_decision(vault: Path | None, query: str, k: int = 8, historical: bool = False,
                   thresholds_path: Path | None = None) -> dict:
-    rows = recall(vault, query, k=max(k, 10), historical=historical)
+    signal_k = max(k, 10) * 5
+    signal_rows = concept_index.search_with_signals(vault, query, k=max(signal_k, 30))
+    seeds = [(row["score"], row["concept"]) for row in signal_rows]
+    rows = recall(vault, query, k=max(k, 10), historical=historical, seeds=seeds)
     if not rows:
         return {"decision": "none", "reason": "no-candidates", "results": []}
-    signals = {row["concept"].id: row for row in concept_index.search_with_signals(
-        vault, query, k=max(k * 5, 30)
-    )}
+    signals = {row["concept"].id: row for row in signal_rows}
     candidates = [retrieval_policy.Candidate(
         id=row["id"], score=float(signals.get(row["id"], {}).get("dense_score", 0.0)), meta=row
     ) for row in rows]
