@@ -1,6 +1,7 @@
 """Immutable, normalized records shared by benchmark adapters and runners."""
 
 from copy import deepcopy
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
 from math import isfinite
 from types import MappingProxyType
@@ -8,6 +9,18 @@ from typing import Any, Iterable, Mapping
 
 
 DATASETS = frozenset({"longmemeval", "hoh", "vitaminc", "rgb", "factlens"})
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    if isinstance(value, bytearray):
+        return bytes(value)
+    return deepcopy(value)
 
 
 def _normalize_strings(values: Iterable[str], field_name: str) -> tuple[str, ...]:
@@ -46,8 +59,8 @@ class BenchmarkCase:
             raise ValueError("metadata must be a dictionary")
         object.__setattr__(self, "context", _normalize_strings(self.context, "context"))
         object.__setattr__(self, "evidence_ids", _normalize_strings(self.evidence_ids, "evidence_ids"))
-        object.__setattr__(self, "labels", MappingProxyType(deepcopy(self.labels)))
-        object.__setattr__(self, "metadata", MappingProxyType(deepcopy(self.metadata)))
+        object.__setattr__(self, "labels", _freeze(self.labels))
+        object.__setattr__(self, "metadata", _freeze(self.metadata))
         validate_case(self)
 
 
