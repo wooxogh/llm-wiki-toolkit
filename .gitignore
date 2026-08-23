@@ -15,3 +15,10 @@ dist/
 # Scratch space for the SDD tooling that builds this repo; not part of the
 # published project.
 .superpowers/
+
+# Local benchmark inputs and generated evaluation output.
+benchmarks/data/**
+!benchmarks/data/.gitkeep
+benchmarks/results/**
+!benchmarks/results/.gitkeep
+benchmarks/configs/*.local.yaml
