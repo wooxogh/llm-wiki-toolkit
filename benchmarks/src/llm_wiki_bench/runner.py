@@ -53,12 +53,21 @@ def validate_config(config: dict) -> list[str]:
         if not _nonblank(details.get("version")):
             errors.append(f"datasets.{suite}.version is required")
     for suite, details in datasets.items():
-        if suite not in (*REQUIRED_SUITES, "factlens") or not isinstance(details, dict):
+        if suite not in (*REQUIRED_SUITES, "factlens"):
             continue
-        if "path" in details and not _nonblank(details["path"]):
-            errors.append(f"datasets.{suite}.path must be a non-blank string")
-        if "version" in details and not _nonblank(details["version"]):
-            errors.append(f"datasets.{suite}.version must be a non-blank string")
+        if not isinstance(details, dict):
+            errors.append(f"datasets.{suite} must be a mapping")
+            continue
+        if suite == "factlens":
+            if not _nonblank(details.get("path")):
+                errors.append("datasets.factlens.path is required")
+            if not _nonblank(details.get("version")):
+                errors.append("datasets.factlens.version is required")
+        else:
+            if "path" in details and not _nonblank(details["path"]):
+                errors.append(f"datasets.{suite}.path must be a non-blank string")
+            if "version" in details and not _nonblank(details["version"]):
+                errors.append(f"datasets.{suite}.version must be a non-blank string")
     return errors
 
 
@@ -154,12 +163,18 @@ def run_suite(
 def timestamped_run_dir(output_root: Path, suite: str) -> Path:
     """Reserve a unique UTC timestamped output directory for a suite execution."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    candidate = Path(output_root) / f"{stamp}-{suite}"
+    root = Path(output_root)
+    root.mkdir(parents=True, exist_ok=True)
     suffix = 1
-    while candidate.exists():
-        candidate = Path(output_root) / f"{stamp}-{suite}-{suffix}"
+    while True:
+        name = f"{stamp}-{suite}" if suffix == 1 else f"{stamp}-{suite}-{suffix - 1}"
+        candidate = root / name
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            pass
         suffix += 1
-    return candidate
 
 
 def _dataset_config(adapter: BenchmarkAdapter, config: Mapping[str, Any]) -> dict[str, Any]:

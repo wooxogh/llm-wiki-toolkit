@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from llm_wiki_bench.registry import get_adapter
-from llm_wiki_bench.runner import load_config, load_predictions, run_suite, validate_config
+from llm_wiki_bench.runner import load_config, load_predictions, run_suite, timestamped_run_dir, validate_config
 
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
@@ -79,3 +79,33 @@ def test_factlens_absent_from_config_is_not_configured(tmp_path: Path) -> None:
     assert validate_config(config) == []
     with pytest.raises(ValueError, match="factlens: not_configured"):
         run_suite(get_adapter("factlens"), config, {}, tmp_path / "run")
+
+
+def test_present_factlens_config_requires_mapping_path_and_version(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config["datasets"]["factlens"] = None
+    assert "datasets.factlens must be a mapping" in validate_config(config)
+
+    config["datasets"]["factlens"] = {"path": ""}
+    errors = validate_config(config)
+    assert "datasets.factlens.path is required" in errors
+    assert "datasets.factlens.version is required" in errors
+
+
+def test_timestamped_run_dir_atomically_reserves_a_unique_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class FixedDateTime:
+        @classmethod
+        def now(cls, _timezone: object) -> "FixedDateTime":
+            return cls()
+
+        def strftime(self, _format: str) -> str:
+            return "20260824T010203Z"
+
+    monkeypatch.setattr("llm_wiki_bench.runner.datetime", FixedDateTime)
+
+    first = timestamped_run_dir(tmp_path, "hoh")
+    second = timestamped_run_dir(tmp_path, "hoh")
+
+    assert first.is_dir()
+    assert second.is_dir()
+    assert first != second
