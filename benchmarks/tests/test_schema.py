@@ -35,7 +35,12 @@ def test_valid_answerable_case_and_prediction_validate() -> None:
 
 
 def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
-    labels = {"answer": "A supported claim", "nested": {"key": "value"}}
+    labels = {
+        "answer": "A supported claim",
+        "nested": {"key": "value"},
+        "items": ["item-1"],
+        "tags": {"tag-1"},
+    }
     metadata = {"source": "fixture"}
     case = BenchmarkCase(
         id="case-1",
@@ -50,12 +55,21 @@ def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
     labels["answer"] = "Mutated caller value"
     metadata["source"] = "Mutated caller value"
 
-    assert case.labels == {"answer": "A supported claim", "nested": {"key": "value"}}
+    assert case.labels == {
+        "answer": "A supported claim",
+        "nested": {"key": "value"},
+        "items": ("item-1",),
+        "tags": frozenset({"tag-1"}),
+    }
     assert case.metadata == {"source": "fixture"}
     with pytest.raises(TypeError):
         case.labels["answer"] = "Mutated case value"
     with pytest.raises(TypeError):
         case.labels["nested"]["key"] = "Mutated nested case value"
+    with pytest.raises(AttributeError):
+        case.labels["items"].append("item-2")
+    with pytest.raises(AttributeError):
+        case.labels["tags"].add("tag-2")
     with pytest.raises(TypeError):
         case.metadata["source"] = "Mutated case value"
 
