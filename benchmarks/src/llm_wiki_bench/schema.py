@@ -1,8 +1,10 @@
 """Immutable, normalized records shared by benchmark adapters and runners."""
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from math import isfinite
-from typing import Iterable
+from types import MappingProxyType
+from typing import Any, Iterable, Mapping
 
 
 DATASETS = frozenset({"longmemeval", "hoh", "vitaminc", "rgb", "factlens"})
@@ -11,7 +13,10 @@ DATASETS = frozenset({"longmemeval", "hoh", "vitaminc", "rgb", "factlens"})
 def _normalize_strings(values: Iterable[str], field_name: str) -> tuple[str, ...]:
     if isinstance(values, str):
         raise ValueError(f"{field_name} must be a sequence of strings")
-    normalized = tuple(values)
+    try:
+        normalized = tuple(values)
+    except TypeError as error:
+        raise ValueError(f"{field_name} must be a sequence of strings") from error
     if any(not isinstance(value, str) or not value.strip() for value in normalized):
         raise ValueError(f"{field_name} must contain non-blank strings")
     return normalized
@@ -29,18 +34,20 @@ class BenchmarkCase:
     split: str
     task: str
     prompt: str
-    labels: dict
+    labels: Mapping[str, Any]
     context: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
-    metadata: dict = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "context", _normalize_strings(self.context, "context"))
-        object.__setattr__(self, "evidence_ids", _normalize_strings(self.evidence_ids, "evidence_ids"))
         if not isinstance(self.labels, dict):
             raise ValueError("labels must be a dictionary")
         if not isinstance(self.metadata, dict):
             raise ValueError("metadata must be a dictionary")
+        object.__setattr__(self, "context", _normalize_strings(self.context, "context"))
+        object.__setattr__(self, "evidence_ids", _normalize_strings(self.evidence_ids, "evidence_ids"))
+        object.__setattr__(self, "labels", MappingProxyType(deepcopy(self.labels)))
+        object.__setattr__(self, "metadata", MappingProxyType(deepcopy(self.metadata)))
         validate_case(self)
 
 
@@ -70,6 +77,7 @@ class Prediction:
 
 def validate_case(case: BenchmarkCase) -> None:
     _require_nonblank(case.id, "id")
+    _require_nonblank(case.dataset, "dataset")
     if case.dataset not in DATASETS:
         raise ValueError(f"dataset must be one of: {', '.join(sorted(DATASETS))}")
     _require_nonblank(case.split, "split")

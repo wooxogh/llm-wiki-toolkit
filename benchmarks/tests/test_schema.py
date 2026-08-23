@@ -34,8 +34,51 @@ def test_valid_answerable_case_and_prediction_validate() -> None:
     assert prediction.ranked_evidence_ids == ("doc-1",)
 
 
+def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
+    labels = {"answer": "A supported claim"}
+    metadata = {"source": "fixture"}
+    case = BenchmarkCase(
+        id="case-1",
+        dataset="factlens",
+        split="test",
+        task="answer",
+        prompt="What does the evidence establish?",
+        labels=labels,
+        metadata=metadata,
+    )
+
+    labels["answer"] = "Mutated caller value"
+    metadata["source"] = "Mutated caller value"
+
+    assert case.labels == {"answer": "A supported claim"}
+    assert case.metadata == {"source": "fixture"}
+    with pytest.raises(TypeError):
+        case.labels["answer"] = "Mutated case value"
+    with pytest.raises(TypeError):
+        case.metadata["source"] = "Mutated case value"
+
+
 @pytest.mark.parametrize("case_kwargs", [{"id": "   "}, {"dataset": "unknown"}, {"prompt": ""}])
 def test_invalid_case_identity_dataset_or_prompt_is_rejected(case_kwargs: dict) -> None:
+    values = {
+        "id": "case-1",
+        "dataset": "factlens",
+        "split": "test",
+        "task": "answer",
+        "prompt": "What does the evidence establish?",
+        "labels": {"answer": "A supported claim"},
+    }
+    values.update(case_kwargs)
+
+    with pytest.raises(ValueError):
+        BenchmarkCase(**values)
+
+
+@pytest.mark.parametrize(
+    "case_kwargs",
+    [{"context": None}, {"evidence_ids": None}, {"dataset": []}],
+)
+def test_invalid_case_container_inputs_raise_value_error(case_kwargs: dict) -> None:
     values = {
         "id": "case-1",
         "dataset": "factlens",
