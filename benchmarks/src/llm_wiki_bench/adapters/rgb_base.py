@@ -72,15 +72,17 @@ def parse_answer_slots(value: Any, path: Path, record_number: int) -> tuple[tupl
 def is_multi_slot_answer(value: Any) -> bool:
     """True when `value` is genuinely more than one required answer slot.
 
-    `en`/`en_refine` encode a single slot's aliases as one inner list, e.g.
-    `[["Lisbon", "Lisbon, Portugal"]]` -- a bare list of strings, one slot.
-    Only a list of two-or-more nested lists (`[["A"], ["B"]]`) is a case where
-    a prediction must satisfy every slot, not just alias-match one answer, so
-    only that shape routes to the `multi_slot_retrieval_qa` profile. Anything
-    else (a bare string, a flat list of string aliases, or a single-element
-    outer list) is one slot and keeps flattening through `flatten_answers`.
+    The outer list length IS the slot count -- an inner list is that slot's
+    aliases, an inner string is a slot with a single alias. Measured against
+    the real en_refine.json, this is uniform across all twelve multi-slot
+    records regardless of whether their inner entries are lists or bare
+    strings (e.g. `['Sandra Bullock', 'Channing Tatum']` is two one-alias
+    slots, not one two-alias slot -- confirmed against the record's own
+    question, "Who stars in The Lost City?"). A single-element outer list
+    (`[["Lisbon", "Lisbon, Portugal"]]`, 288 of 300 real records) is one slot
+    with multiple aliases and keeps flattening through `flatten_answers`.
     """
-    return isinstance(value, list) and len(value) > 1 and all(isinstance(item, list) for item in value)
+    return isinstance(value, list) and len(value) > 1
 
 
 def synthesize_pool_ids(
