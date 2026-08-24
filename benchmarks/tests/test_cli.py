@@ -187,6 +187,34 @@ def test_validate_fails_with_a_record_level_message_when_a_configured_source_is_
     assert "record 1" in result.stderr
 
 
+def test_validate_reports_the_omitted_count_when_sample_exceeds_the_failure_cap(tmp_path: Path) -> None:
+    """`--sample` above `check_conformance`'s 20-failure cap must not silently
+    truncate: a sample with more than 20 failures must say how many were
+    dropped, the same way `conformance` does."""
+    config = _build_config(tmp_path)
+    bad_source = tmp_path / "vitaminc_all_bad.jsonl"
+    bad_records = [
+        {"unique_id": f"u{i}", "claim": "c", "evidence": "e", "label": "NOT_ENOUGH_INFO"} for i in range(1, 31)
+    ]
+    bad_source.write_text("".join(json.dumps(record) + "\n" for record in bad_records), encoding="utf-8")
+    config["datasets"]["vitaminc"]["path"] = str(bad_source)
+    config_path = tmp_path / "suite.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(config_path), "--sample", "50"],
+        text=True,
+        capture_output=True,
+        check=False,
+        cwd=BENCHMARKS,
+        env=_cli_environment(),
+    )
+
+    assert result.returncode != 0
+    assert "vitaminc" in result.stderr
+    assert "... and 10 more" in result.stderr
+
+
 def test_runtime_paths_are_ignored_without_ignoring_examples_or_markers() -> None:
     """Catch accidental commits of local data, outputs, and copied configs."""
     patterns = (REPOSITORY / ".gitignore").read_text(encoding="utf-8")

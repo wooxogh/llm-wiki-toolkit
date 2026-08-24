@@ -45,7 +45,9 @@ def main(argv: list[str] | None = None) -> int:
             for adapter in enabled_adapters(config):
                 conformance_report = check_conformance(adapter, config["datasets"][adapter.name], args.sample)
                 if conformance_report["failure_count"]:
-                    raise ValueError(f"{adapter.name}: " + "; ".join(conformance_report["failures"]))
+                    omitted = conformance_report["failure_count"] - len(conformance_report["failures"])
+                    suffix = f"; ... and {omitted} more" if omitted > 0 else ""
+                    raise ValueError(f"{adapter.name}: " + "; ".join(conformance_report["failures"]) + suffix)
                 print(f"{adapter.name}: {conformance_report['checked']}/{conformance_report['record_count']} sampled ok")
             print("valid")
             return 0
