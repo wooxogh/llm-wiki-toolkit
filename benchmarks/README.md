@@ -137,17 +137,76 @@ python -m llm_wiki_bench report --run-dir benchmarks/results/<timestamp>-rgb_bas
 
 Each run writes:
 
-- `manifest.json` — suite, source path/version, configured split and `top_k`,
-  plus total/evaluated/skipped/error counts.
-- `metrics.json` — aggregate metrics and, for label tasks, the confusion matrix.
+- `manifest.json` — suite, `dataset.path`/`dataset.version`, `dataset.content_digest`
+  (`sha256:...`, computed from the bytes actually read), `dataset.record_count`,
+  configured `split` and `top_k`, `evidence_id_origin` (`upstream` or
+  `synthesized`), `profiles` (the set of per-record profiles observed, each with
+  its case count — a suite whose adapter selects a profile per record, such as
+  LongMemEval's `memory_qa`/`memory_qa_abstention` split, can report more than
+  one), `capabilities_scored` (the union of capabilities declared by every
+  profile observed — never inferred from which fields happened to be
+  populated), `run_parameters` (recorded verbatim, used to build nothing), and
+  `case_counts` (`total`/`evaluated`/`skipped`/`error`).
+- `metrics.json` — an `aggregate` object plus, for label tasks, the confusion
+  matrix. `aggregate["n"]` is the total scored rows; `aggregate["counts"]` is a
+  sibling mapping from **each metric key** to how many of those rows actually
+  contributed a finite value to it. The two differ whenever a run mixes
+  profiles: a metric declared by only one of the profiles present (LongMemEval's
+  `fine_recall@1`, say) is averaged over its own `counts[key]`, which can be
+  smaller than `n`. Read a metric's own `counts` entry before quoting it —
+  `n` alone can overstate how many cases actually measured that metric.
 - `per_case.jsonl` — the recorded prediction, score fields, and status for each
   normalized case.
 - `skips.jsonl` — skipped or scoring-error cases, with the reason.
-- `report.md` — a deterministic Markdown rendering of the metrics.
+- `report.md` — a deterministic Markdown rendering of the manifest header
+  (suite, split, version, `content_digest`, `case_counts`, `capabilities_scored`)
+  followed by the metrics, so the artifact a human reads states its own
+  provenance and completeness rather than only looking complete.
 
 Treat the configuration together with this manifest as run provenance. Preserve
 the local configuration copy and the recorded prediction file alongside any
 published comparison.
+
+### Prediction file format
+
+`--predictions PATH` is one JSON object per line, keyed by `case_id` (one line
+per normalized case unless `--allow-skips` is given). Fields, all optional
+except `case_id`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `case_id` | string | Must match a normalized case's `id` exactly. |
+| `answer` | string \| null | Free-text answer, scored by exact match and token F1. |
+| `label` | string \| null | Classification label — see vocabularies below. |
+| `ranked_evidence_ids` | list[string] | Retrieved identifiers, ranked best first. |
+| `cited_evidence_ids` | list[string] | Identifiers the answer actually cites. |
+| `sub_claim_labels` | list[string] | Per-sub-claim verdicts, same order as `sub_claims` (FactLens). |
+| `abstained` | bool | Whether the system declined to answer. Cannot be `true` together with a non-null `answer`. |
+| `latency_ms` | number \| null | Non-negative. |
+
+Scoring is exact-string comparison against the case's normalized labels or
+evidence ids — a prediction using the released spelling instead of the
+normalized one scores as a wrong answer, not an error, so getting the
+vocabulary wrong is silent:
+
+- **VitaminC `label`** — the case's gold label is normalized from the released
+  `SUPPORTS`/`REFUTES`/`NOT ENOUGH INFO` spelling to `entailment`/
+  `contradiction`/`neutral` (`vitaminc.py`). Predictions must supply the
+  **normalized** spelling; `"label": "SUPPORTS"` scores `label_accuracy 0.0`
+  against every case, indistinguishable from a model that got everything
+  wrong.
+- **FactLens `sub_claim_labels`** — canonicalized to the lowercase strings
+  `"true"`/`"false"` regardless of whether the released row held a string or a
+  boolean (`factlens.py`). Predictions must use these two lowercase strings,
+  one per `sub_claims` entry, in the same order.
+- **HoH and all three RGB suites' evidence ids** — these releases carry no
+  upstream document identifiers, so the adapter synthesizes stable ones from
+  each record's own document position: `{case_id}:positive:{index}` and
+  `{case_id}:negative:{index}` (`0`-based `index`, matching `context`'s order).
+  `ranked_evidence_ids`/`cited_evidence_ids` must use this exact form —
+  `manifest.json`'s `evidence_id_origin: "synthesized"` is the run-time flag
+  that this suite's retrieval score is over adapter-invented identifiers, not
+  the dataset's own.
 
 ## Tests
 
