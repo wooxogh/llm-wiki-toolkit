@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from llm_wiki_bench.profiles import get_profile
 from llm_wiki_bench.readers import READERS, file_digest
 from llm_wiki_bench.schema import BenchmarkCase
 
@@ -47,11 +48,19 @@ class BenchmarkAdapter(ABC):
             values = self.normalize(record, source, record_number, split)
             metadata = dict(values.pop("metadata", {}))
             metadata.update({"source_path": str(source), "source_record": record_number})
+            if "profile" in values:
+                profile = values.pop("profile")
+                try:
+                    get_profile(profile)
+                except ValueError as error:
+                    raise ValueError(f"{source}: record {record_number}: {error}") from error
+            else:
+                profile = self.profile
             cases.append(
                 BenchmarkCase(
                     dataset=self.name,
                     split=split,
-                    profile=self.profile,
+                    profile=profile,
                     metadata=metadata,
                     **values,
                 )
@@ -62,7 +71,12 @@ class BenchmarkAdapter(ABC):
     def normalize(
         self, record: dict[str, Any], path: Path, record_number: int, split: str
     ) -> dict[str, Any]:
-        """Return BenchmarkCase fields other than dataset, split, and profile."""
+        """Return BenchmarkCase fields other than dataset and split.
+
+        May include a `profile` key to select a profile other than the
+        class attribute `self.profile` for this record (must be a
+        registered profile); when omitted, `load` uses `self.profile`.
+        """
 
     @staticmethod
     def _required(record: dict[str, Any], key: str, path: Path, record_number: int) -> Any:

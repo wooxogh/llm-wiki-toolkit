@@ -64,3 +64,32 @@ def test_load_rejects_an_unknown_container():
 
     with pytest.raises(ValueError, match="unknown container: xml"):
         _Bad().load(Path("unused.jsonl"), split="test")
+
+
+def test_load_falls_back_to_the_class_attribute_profile_when_normalize_omits_it(tmp_path):
+    result = _Stub().load(_source(tmp_path), split="test")
+    assert {case.profile for case in result.cases} == {"grounded_verification"}
+
+
+def test_load_uses_the_profile_normalize_returns(tmp_path):
+    class _PerRecord(_Stub):
+        def normalize(self, record, path, record_number, split):
+            values = super().normalize(record, path, record_number, split)
+            values["profile"] = "claim_decomposition"
+            values["labels"] = {"sub_claims": ("c1",), "sub_claim_labels": ("entailment",)}
+            return values
+
+    result = _PerRecord().load(_source(tmp_path), split="test")
+    assert {case.profile for case in result.cases} == {"claim_decomposition"}
+
+
+def test_load_rejects_an_unregistered_profile_from_normalize(tmp_path):
+    class _BadProfile(_Stub):
+        def normalize(self, record, path, record_number, split):
+            values = super().normalize(record, path, record_number, split)
+            values["profile"] = "nope"
+            return values
+
+    source = _source(tmp_path)
+    with pytest.raises(ValueError, match=rf"{source}: record 1: unknown profile: nope"):
+        _BadProfile().load(source, split="test")
