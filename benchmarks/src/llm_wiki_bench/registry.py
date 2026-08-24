@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from .adapters import BenchmarkAdapter, FactLensAdapter, HoHAdapter, LongMemEvalAdapter, RGBAdapter, VitaminCAdapter
+from .adapters import (
+    BenchmarkAdapter,
+    FactLensAdapter,
+    HoHAdapter,
+    LongMemEvalAdapter,
+    RGBBaseAdapter,
+    VitaminCAdapter,
+)
 
 
 _ADAPTERS: dict[str, BenchmarkAdapter] = {
     adapter.name: adapter
-    for adapter in (LongMemEvalAdapter(), HoHAdapter(), VitaminCAdapter(), RGBAdapter(), FactLensAdapter())
+    for adapter in (LongMemEvalAdapter(), HoHAdapter(), VitaminCAdapter(), RGBBaseAdapter(), FactLensAdapter())
 }
 
 

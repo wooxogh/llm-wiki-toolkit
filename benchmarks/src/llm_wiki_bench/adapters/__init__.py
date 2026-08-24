@@ -4,7 +4,7 @@ from .base import BenchmarkAdapter
 from .factlens import FactLensAdapter
 from .hoh import HoHAdapter
 from .longmemeval import LongMemEvalAdapter
-from .rgb import RGBAdapter
+from .rgb_base import RGBBaseAdapter
 from .vitaminc import VitaminCAdapter
 
 __all__ = [
@@ -12,6 +12,6 @@ __all__ = [
     "FactLensAdapter",
     "HoHAdapter",
     "LongMemEvalAdapter",
-    "RGBAdapter",
+    "RGBBaseAdapter",
     "VitaminCAdapter",
 ]
