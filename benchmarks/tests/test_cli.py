@@ -135,15 +135,14 @@ def test_run_prints_timestamped_artifact_directory_after_writing(tmp_path: Path)
 def test_shipped_example_config_is_correctly_rejected_without_downloaded_data(tmp_path: Path) -> None:
     """`validate` failing on the shipped example is the fix working, not a regression.
 
-    `benchmarks/configs/suite.example.yaml` points at real (unfetched)
-    dataset paths the repository deliberately does not carry, and uses the
-    pre-Task-14 shape (suite name `rgb`, no `split` keys) -- Task 16 owns
-    rewriting it to the new shape with real, quoted paths. This test runs
-    `validate` against the file exactly as shipped (not a copy, not a
-    substitute config) and asserts it is rejected with an informative,
-    specific message, so this task's headline claim -- that `validate` now
-    genuinely opens and checks data rather than rubber-stamping any config --
-    is exercised, not just asserted in prose.
+    `benchmarks/configs/suite.example.yaml` (Task 16's rewrite: real suite
+    names, real `path`/`version`/`split` values, the `hoh` split quoted) points
+    at real, unfetched dataset paths the repository deliberately does not
+    carry. This test runs `validate` against the file exactly as shipped (not
+    a copy, not a substitute config) and asserts it is rejected, naming every
+    configured suite's missing path, so this task's headline claim -- that
+    `validate` now genuinely opens and checks data rather than rubber-stamping
+    any config -- is exercised, not just asserted in prose.
     """
     result = subprocess.run(
         [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", "configs/suite.example.yaml"],
@@ -155,8 +154,16 @@ def test_shipped_example_config_is_correctly_rejected_without_downloaded_data(tm
     )
 
     assert result.returncode != 0
-    assert "does not exist" in result.stderr
-    assert "split is required" in result.stderr
+    for suite in (
+        "longmemeval",
+        "hoh",
+        "vitaminc",
+        "rgb_base",
+        "rgb_integration",
+        "rgb_counterfactual",
+        "factlens",
+    ):
+        assert f"datasets.{suite}.path does not exist" in result.stderr
 
 
 def test_validate_fails_with_a_record_level_message_when_a_configured_source_is_malformed(tmp_path: Path) -> None:
