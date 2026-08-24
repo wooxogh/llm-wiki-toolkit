@@ -41,7 +41,7 @@ def _write_hoh_fixture(tmp_path: Path) -> Path:
     return path
 
 
-def _write_config(tmp_path: Path) -> Path:
+def _build_config(tmp_path: Path) -> dict:
     """Build a config from the tracked fixtures for every required suite.
 
     Every required suite must be present because both `validate` and `run`
@@ -86,8 +86,12 @@ def _write_config(tmp_path: Path) -> Path:
             },
         },
     }
+    return config
+
+
+def _write_config(tmp_path: Path) -> Path:
     path = tmp_path / "suite.yaml"
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    path.write_text(yaml.safe_dump(_build_config(tmp_path)), encoding="utf-8")
     return path
 
 
@@ -128,22 +132,21 @@ def test_run_prints_timestamped_artifact_directory_after_writing(tmp_path: Path)
     assert (run_dir / "manifest.json").is_file()
 
 
-def test_example_config_validates_against_tracked_fixtures(tmp_path: Path) -> None:
-    """A config built entirely from the tracked fixtures must validate.
+def test_shipped_example_config_is_correctly_rejected_without_downloaded_data(tmp_path: Path) -> None:
+    """`validate` failing on the shipped example is the fix working, not a regression.
 
-    `benchmarks/configs/suite.example.yaml` itself points at real
-    (unfetched) dataset paths and is *correctly* rejected by `validate` in a
-    checkout without downloaded data -- that rejection is the fix working,
-    not a regression, and Task 16 owns rewriting that file. This test's
-    original intent -- that the shipped example's shape validates once
-    pointed at fixtures actually present in the repository -- is preserved
-    by constructing a fixture-backed config directly instead of depending on
-    the example file's contents.
+    `benchmarks/configs/suite.example.yaml` points at real (unfetched)
+    dataset paths the repository deliberately does not carry, and uses the
+    pre-Task-14 shape (suite name `rgb`, no `split` keys) -- Task 16 owns
+    rewriting it to the new shape with real, quoted paths. This test runs
+    `validate` against the file exactly as shipped (not a copy, not a
+    substitute config) and asserts it is rejected with an informative,
+    specific message, so this task's headline claim -- that `validate` now
+    genuinely opens and checks data rather than rubber-stamping any config --
+    is exercised, not just asserted in prose.
     """
-    config = _write_config(tmp_path)
-
     result = subprocess.run(
-        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(config)],
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", "configs/suite.example.yaml"],
         text=True,
         capture_output=True,
         check=False,
@@ -151,8 +154,37 @@ def test_example_config_validates_against_tracked_fixtures(tmp_path: Path) -> No
         env=_cli_environment(),
     )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip().splitlines()[-1] == "valid"
+    assert result.returncode != 0
+    assert "does not exist" in result.stderr
+    assert "split is required" in result.stderr
+
+
+def test_validate_fails_with_a_record_level_message_when_a_configured_source_is_malformed(tmp_path: Path) -> None:
+    """A source file that exists but contains an unnormalizable record must
+    fail `validate` with the record-level message, not pass because the
+    path merely exists."""
+    config = _build_config(tmp_path)
+    bad_source = tmp_path / "vitaminc_malformed.jsonl"
+    bad_source.write_text(
+        json.dumps({"unique_id": "u1", "claim": "c", "evidence": "e", "label": "NOT_ENOUGH_INFO"}) + "\n",
+        encoding="utf-8",
+    )
+    config["datasets"]["vitaminc"]["path"] = str(bad_source)
+    config_path = tmp_path / "suite.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(config_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+        cwd=BENCHMARKS,
+        env=_cli_environment(),
+    )
+
+    assert result.returncode != 0
+    assert "vitaminc" in result.stderr
+    assert "record 1" in result.stderr
 
 
 def test_runtime_paths_are_ignored_without_ignoring_examples_or_markers() -> None:

@@ -104,6 +104,33 @@ def test_conformance_rejects_a_non_string_split_as_a_config_error_before_reading
     assert captured.out == ""
 
 
+def test_conformance_cli_exits_nonzero_on_a_malformed_record(tmp_path, capsys):
+    """The CLI wiring, not just `check_conformance` directly: a config whose
+    source exists but contains a malformed record must make `conformance`
+    exit non-zero and print the record-level message."""
+    path = tmp_path / "bad.jsonl"
+    path.write_text(
+        json.dumps({"unique_id": "u1", "claim": "c", "evidence": "e", "label": "NOT_ENOUGH_INFO"}) + "\n",
+        encoding="utf-8",
+    )
+    config = {
+        "output_root": str(tmp_path / "out"),
+        "top_k": 8,
+        "datasets": {
+            "vitaminc": {"path": str(path), "version": "fixture", "split": "test"},
+        },
+    }
+    config_path = tmp_path / "suite.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    exit_code = main(["conformance", "--config", str(config_path), "--suite", "vitaminc"])
+
+    assert exit_code == 1
+    out = capsys.readouterr().out
+    assert "1 failures" in out
+    assert "record 1" in out
+
+
 def test_conformance_bounds_repeated_per_record_failures(tmp_path, capsys):
     """A systemic problem must not print one line per record: report a
     bounded number of examples plus a count of the rest."""
