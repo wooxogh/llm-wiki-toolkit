@@ -102,7 +102,8 @@ def test_runtime_paths_are_ignored_without_ignoring_examples_or_markers() -> Non
     assert "benchmarks/configs/*.local.yaml" in patterns
     assert (BENCHMARKS / "data" / ".gitkeep").is_file()
     assert (BENCHMARKS / "results" / ".gitkeep").is_file()
-    for tracked in (BENCHMARKS / "fixtures" / "hoh.jsonl", BENCHMARKS / "configs" / "suite.example.yaml"):
+    tracked_paths = tuple(FIXTURES.iterdir()) + (BENCHMARKS / "configs" / "suite.example.yaml",)
+    for tracked in tracked_paths:
         relative_path = str(tracked.relative_to(REPOSITORY))
         result = subprocess.run(
             ["git", "check-ignore", "-q", "--", relative_path],
