@@ -1,0 +1,38 @@
+[
+  {
+    "question_id": "fixture_single_session",
+    "question_type": "single-session-user",
+    "question": "Where did I leave the spare key?",
+    "answer": "in the blue vase",
+    "question_date": "2024/03/02 (Sat) 10:00",
+    "haystack_session_ids": ["fixture-s1", "fixture-s2"],
+    "haystack_dates": ["2024/02/01", "2024/02/20"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I put the spare key in the blue vase.", "has_answer": true},
+        {"role": "assistant", "content": "Noted."}
+      ],
+      [
+        {"role": "user", "content": "The weather was pleasant today."},
+        {"role": "assistant", "content": "Glad to hear it."}
+      ]
+    ],
+    "answer_session_ids": ["fixture-s1"]
+  },
+  {
+    "question_id": "fixture_unanswerable_abs",
+    "question_type": "single-session-user",
+    "question": "Which airline did I fly to Lisbon?",
+    "answer": "no information available",
+    "question_date": "2024/03/03 (Sun) 09:15",
+    "haystack_session_ids": ["fixture-s3"],
+    "haystack_dates": ["2024/02/25"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I renewed my passport."},
+        {"role": "assistant", "content": "Good timing.", "has_answer": true}
+      ]
+    ],
+    "answer_session_ids": ["fixture-s3"]
+  }
+]

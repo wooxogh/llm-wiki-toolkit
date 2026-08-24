@@ -1,1 +1,0 @@
-{"id":"lme-1","split":"test","source_version":"longmemeval-fixture-v1","question":"Where did Mina leave the key?","sessions":["Mina left the key in the blue vase."],"answers":["the blue vase"],"evidence_ids":["session-1"]}
