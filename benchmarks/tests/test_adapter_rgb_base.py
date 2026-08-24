@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_wiki_bench.adapters.rgb_base import RGBBaseAdapter
+from llm_wiki_bench.adapters.rgb_base import RGBBaseAdapter, require_documents
 
 RECORD = {
     "id": 0,
@@ -71,6 +71,14 @@ def test_empty_positive_pool_is_rejected(tmp_path):
     record = dict(RECORD, positive=[])
     with pytest.raises(ValueError, match="record 1: positive must be a non-empty list"):
         RGBBaseAdapter().load(_write(tmp_path, [record]), split="en")
+
+
+def test_require_documents_honors_the_required_flag_for_any_key(tmp_path):
+    path = tmp_path / "en.json"
+    record = {"positive_wrong": []}
+    with pytest.raises(ValueError, match="record 3: positive_wrong must be a non-empty list"):
+        require_documents(record, "positive_wrong", path, 3, required=True)
+    assert require_documents(record, "positive_wrong", path, 3) == []
 
 
 def test_the_committed_fixture_matches_the_released_shape():

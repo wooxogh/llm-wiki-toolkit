@@ -54,10 +54,12 @@ def synthesize_pool_ids(
     return tuple(positive) + tuple(negative), positive_ids, positive_ids + negative_ids
 
 
-def require_documents(record: dict[str, Any], key: str, path: Path, record_number: int) -> list[str]:
+def require_documents(
+    record: dict[str, Any], key: str, path: Path, record_number: int, *, required: bool = False
+) -> list[str]:
     value = record.get(key)
-    if key == "positive" and (not isinstance(value, list) or not value):
-        raise ValueError(f"{path}: record {record_number}: positive must be a non-empty list")
+    if required and (not isinstance(value, list) or not value):
+        raise ValueError(f"{path}: record {record_number}: {key} must be a non-empty list")
     if value is None:
         return []
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
@@ -75,7 +77,7 @@ class RGBBaseAdapter(BenchmarkAdapter):
         self, record: dict[str, Any], path: Path, record_number: int, split: str
     ) -> dict[str, Any]:
         case_id = str(self._required(record, "id", path, record_number))
-        positive = require_documents(record, "positive", path, record_number)
+        positive = require_documents(record, "positive", path, record_number, required=True)
         negative = require_documents(record, "negative", path, record_number)
         context, positive_ids, candidate_ids = synthesize_pool_ids(case_id, positive, negative)
         metadata = self._metadata(record, _CONSUMED)
