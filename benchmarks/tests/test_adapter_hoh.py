@@ -73,3 +73,13 @@ def test_a_missing_document_id_is_rejected(tmp_path):
     record = dict(RECORD, document={"title": "no id"})
     with pytest.raises(ValueError, match="record 1: document.id is required"):
         HoHAdapter().load(_write(tmp_path, [record]), split="s")
+
+
+def test_a_null_outdated_answer_is_rejected_rather_than_stringified(tmp_path):
+    """A `None` answer must not silently become the literal string "None"."""
+    record = dict(
+        RECORD,
+        outdated_infos=[{"answer": None, "evidence": RECORD["outdated_infos"][0]["evidence"]}],
+    )
+    with pytest.raises(ValueError, match=r"record 1: outdated_infos\[0\]\.answer is required"):
+        HoHAdapter().load(_write(tmp_path, [record]), split="s")

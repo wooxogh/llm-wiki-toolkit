@@ -19,7 +19,7 @@ from typing import Any
 
 from .base import BenchmarkAdapter
 
-_CONSUMED = {"question", "answer", "evidence", "outdated_infos", "document"}
+_CONSUMED = {"question", "answer", "evidence", "outdated_infos", "document", "last_modified_time"}
 
 
 class HoHAdapter(BenchmarkAdapter):
@@ -43,18 +43,26 @@ class HoHAdapter(BenchmarkAdapter):
         for index, entry in enumerate(outdated):
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: record {record_number}: outdated_infos[{index}] is not an object")
-            distractors.append(str(self._required(entry, "answer", path, record_number)))
-            outdated_evidence.append(str(self._required(entry, "evidence", path, record_number)))
+            for field in ("answer", "evidence"):
+                value = self._required(entry, field, path, record_number)
+                if not str(value or "").strip():
+                    raise ValueError(
+                        f"{path}: record {record_number}: outdated_infos[{index}].{field} is required"
+                    )
+            distractors.append(str(entry["answer"]))
+            outdated_evidence.append(str(entry["evidence"]))
 
         metadata = self._metadata(record, _CONSUMED)
         metadata.update(
             {
                 "document_id": str(document["id"]),
                 "document_title": document.get("title"),
-                "last_modified_time": str(record.get("last_modified_time")),
                 "outdated_count": len(outdated),
             }
         )
+        last_modified_time = record.get("last_modified_time")
+        if last_modified_time is not None:
+            metadata["last_modified_time"] = str(last_modified_time)
         metadata["source_fields"] = {
             key: str(value) for key, value in metadata.get("source_fields", {}).items()
         }
