@@ -16,7 +16,7 @@ against real bytes rather than documentation alone:
 | LongMemEval | JSON array | `question_id` | `answer_session_ids` plus turn-level `has_answer` | MIT |
 | HoH | Parquet | **none** | current `evidence` vs `outdated_infos[].evidence` | Apache-2.0 |
 | VitaminC | JSONL | `unique_id` | inline `evidence` string, no corpus | CC-BY-SA-3.0 |
-| RGB | JSONL (`.json` extension) | `id` (integer) | `positive`/`negative` document text, no ids | NOASSERTION |
+| RGB | JSONL (`.json` extension) | `id` (integer) | `positive`/`negative` document text, no ids; schema differs per variant | NOASSERTION |
 | FactLens | CSV | `ind` | none — sub-claim decomposition | BSD-3-Clause |
 
 Sources: `xiaowu0162/longmemeval-cleaned`, `russwest404/HoH-QAs`,
@@ -39,6 +39,10 @@ boundaries intact: no vendored dataset data, offline after acquisition, and
 Downloading licensed data in CI, publishing benchmark claims, wiring these
 metrics into `wiki-gate`, and integrating the live LLM Wiki retrieval path. The
 runner keeps consuming recorded predictions.
+
+RGB's negative-rejection protocol is also out of scope. It is produced by
+feeding a model only negative documents (`--noise_rate 1`) and measuring
+refusal, so it belongs to the prediction step, which does not exist yet.
 
 ## Design
 
@@ -63,7 +67,9 @@ declares a capability but lacks the data for it is an error, not a silent skip.
 | Profile | Capabilities | Suite |
 | --- | --- | --- |
 | `memory_qa` | `retrieval` (two granularities), `answer`, `abstention` | LongMemEval |
-| `retrieval_qa` | `retrieval`, `answer`, `citations` | RGB |
+| `retrieval_qa` | `retrieval`, `answer`, `citations` | `rgb_base` |
+| `multi_slot_retrieval_qa` | `retrieval`, `multi_slot_answer`, `citations` | `rgb_integration` |
+| `counterfactual_qa` | `retrieval`, `answer`, `distractor_rejection` | `rgb_counterfactual` |
 | `temporal_discrimination` | `answer`, `distractor_rejection` | HoH |
 | `grounded_verification` | `label` | VitaminC |
 | `claim_decomposition` | `sub_claim_labels` | FactLens |
@@ -77,9 +83,9 @@ was missing.
 `source_version` and `split` leave the record contract.
 
 `split` comes from the source selection in configuration: a file variant for
-LongMemEval (`_s_cleaned`, `_m_cleaned`, `_oracle`) and RGB (`en`, `en_int`,
-`en_fact`, `en_refine`, and the `zh` equivalents), or a released split file for
-VitaminC (`train`, `dev`, `test`). HoH and FactLens ship one file each; their
+LongMemEval (`_s_cleaned`, `_m_cleaned`, `_oracle`) and RGB (`en` or `en_refine`
+for `rgb_base`, `en_int`, `en_fact`, and the `zh` equivalents), or a released
+split file for VitaminC (`train`, `dev`, `test`). HoH and FactLens ship one file each; their
 `split` is a configured label defaulting to the source file stem, so the field
 stays non-blank without inventing a partition that does not exist.
 
@@ -145,6 +151,29 @@ scores answer correctness against the current `answer`, and
 `outdated_infos[].answer` values. Reproducing an outdated answer is a distinct
 failure from being merely wrong, and is reported separately.
 
+**RGB is three suites, not one.** Its variants do not share a schema, so one
+adapter cannot serve them without branching on the data — the failure mode this
+redesign exists to remove. Measured shapes:
+
+| Suite | File | `answer` | `positive` | Extra fields |
+| --- | --- | --- | --- | --- |
+| `rgb_base` | `en`, `en_refine` | `list[list[str]]` — slots of aliases | `list[str]` | — |
+| `rgb_integration` | `en_int` | `list[list[str]]` — two slots | `list[list[str]]` — grouped per sub-question | `asnwer1` (upstream typo, sic), `answer2` |
+| `rgb_counterfactual` | `en_fact` | `str` | `list[str]` | `fakeanswer`, `positive_wrong` |
+
+`en_refine` is the corrected edition of `en` with the same schema, not a separate
+task. `rgb_counterfactual` scores `distractor_rejection` against `fakeanswer`,
+which makes it structurally the same measurement HoH needs.
+
+**RGB context is a pool, not a context.** RGB supplies `positive` and `negative`
+document pools; the upstream harness assembles a context from them at a chosen
+`noise_rate` and `passage_num`. Those are run parameters of the prediction step,
+not properties of the dataset. Since this suite scores recorded predictions and
+never calls a model, the adapters emit both pools with labeled identifiers and
+leave assembly to whatever produced the predictions. `noise_rate` and
+`passage_num` are recorded in the manifest as declared values, for
+comparability, and are not used to build anything.
+
 **VitaminC labels carry spaces.** The released labels are `SUPPORTS`,
 `REFUTES`, and `NOT ENOUGH INFO`. The current adapter accepts only
 `NOT_ENOUGH_INFO` and rejects every real record of that class. The mapping keys
@@ -168,8 +197,8 @@ enough for routine use.
 ### 7. Fixtures follow the released shapes
 
 The fixtures are rewritten to the real schema and the real container for each
-suite — `longmemeval.json` as a JSON array, `vitaminc.jsonl`, `rgb.jsonl`,
-`factlens.csv` — with synthetic content. Synthetic content keeps the repository
+suite — `longmemeval.json` as a JSON array, `vitaminc.jsonl`, one JSONL fixture
+per RGB variant, `factlens.csv` — with synthetic content. Synthetic content keeps the repository
 clear of CC-BY-SA-3.0 and NOASSERTION data while the *shape* is no longer
 invented.
 
@@ -183,7 +212,8 @@ Per-suite adapter tests assert normalization against the real-shaped fixtures
 and rejection of malformed records with file and record number. Profile tests
 assert that a declared capability with missing data raises rather than degrades.
 Reader tests cover each container, including the `.json`-extension-but-JSONL
-case that RGB presents. Manifest tests assert digest, record count, and
+case that RGB presents. Each RGB variant gets its own adapter test, including
+the `list[list[str]]` answer slots and the upstream `asnwer1` typo. Manifest tests assert digest, record count, and
 `evidence_id_origin` are recorded, and that a pinned-digest mismatch fails.
 `validate` tests assert a nonexistent path is now rejected.
 
