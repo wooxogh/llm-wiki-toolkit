@@ -13,7 +13,7 @@ def write_report(run_dir: Path, manifest: dict, per_case: list[dict], metrics: d
     _write_json(run_dir / "manifest.json", manifest)
     _write_jsonl(run_dir / "per_case.jsonl", per_case)
     _write_json(run_dir / "metrics.json", metrics)
-    (run_dir / "report.md").write_text(_markdown(metrics), encoding="utf-8", newline="\n")
+    (run_dir / "report.md").write_text(_markdown(manifest, metrics), encoding="utf-8", newline="\n")
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -29,8 +29,28 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def _markdown(metrics: dict) -> str:
-    lines = ["# Benchmark report", "", "## Metrics", ""]
+def _markdown(manifest: dict, metrics: dict) -> str:
+    """Render a manifest header above the metrics.
+
+    A `metrics.json` with `--allow-skips` where most cases had no prediction
+    would otherwise look identical to a complete run: only the manifest
+    carries `case_counts`, the digest, the split, and which capabilities were
+    actually scored. Rendering them here makes `report.md` -- the
+    human-facing artifact -- self-describing rather than requiring a reader
+    to cross-reference `manifest.json` separately.
+    """
+    dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), dict) else {}
+    header = [
+        ("suite", manifest.get("suite")),
+        ("split", manifest.get("split")),
+        ("version", dataset.get("version")),
+        ("content_digest", dataset.get("content_digest")),
+        ("case_counts", manifest.get("case_counts")),
+        ("capabilities_scored", manifest.get("capabilities_scored")),
+    ]
+    lines = ["# Benchmark report", "", "## Run", ""]
+    lines.extend(f"- {key}: {_format(value)}" for key, value in header)
+    lines += ["", "## Metrics", ""]
     lines.extend(f"- {key}: {_format(value)}" for key, value in sorted(metrics.items()))
     return "\n".join(lines) + "\n"
 
