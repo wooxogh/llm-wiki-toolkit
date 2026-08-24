@@ -60,6 +60,22 @@ def test_page_and_revision_are_kept_as_metadata(tmp_path):
     assert case.metadata["revision_type"] == "real"
 
 
+def test_fever_id_and_big_bench_canary_are_kept_under_source_fields(tmp_path):
+    """VitaminC hand-wrote its metadata dict, dropping FEVER_id (a
+    cross-reference back to FEVER) and big_bench_canary that six sibling
+    adapters would preserve under source_fields via `self._metadata`."""
+    case = VitaminCAdapter().load(_write(tmp_path, [RECORD]), split="test").cases[0]
+    assert case.metadata["source_fields"]["FEVER_id"] == ""
+    assert case.metadata["source_fields"]["big_bench_canary"] == "26b5c67b"
+    assert "FEVER_id" not in case.metadata["source_fields"].keys() - {"FEVER_id", "big_bench_canary"}
+
+
+def test_source_fields_excludes_every_explicitly_consumed_key(tmp_path):
+    case = VitaminCAdapter().load(_write(tmp_path, [RECORD]), split="test").cases[0]
+    consumed = {"unique_id", "claim", "evidence", "label", "case_id", "page", "revision_type", "wiki_revision_id"}
+    assert consumed.isdisjoint(case.metadata["source_fields"])
+
+
 def test_the_committed_fixture_matches_the_released_shape():
     from pathlib import Path
 

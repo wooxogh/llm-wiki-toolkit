@@ -20,7 +20,16 @@ _LABELS = {
     "NOT ENOUGH INFO": "neutral",
 }
 
-_CONSUMED = {"unique_id", "claim", "evidence", "label"}
+_CONSUMED = {
+    "unique_id",
+    "claim",
+    "evidence",
+    "label",
+    "case_id",
+    "page",
+    "revision_type",
+    "wiki_revision_id",
+}
 
 
 class VitaminCAdapter(BenchmarkAdapter):
@@ -38,15 +47,19 @@ class VitaminCAdapter(BenchmarkAdapter):
                 f"{path}: record {record_number}: unsupported VitaminC label {label!r}; "
                 f"expected one of {sorted(_LABELS)}"
             )
+        metadata = self._metadata(record, _CONSUMED)
+        metadata.update(
+            {
+                "case_id": record.get("case_id"),
+                "page": record.get("page"),
+                "revision_type": record.get("revision_type"),
+                "wiki_revision_id": record.get("wiki_revision_id"),
+            }
+        )
         return {
             "id": str(self._required(record, "unique_id", path, record_number)),
             "prompt": self._required(record, "claim", path, record_number),
             "context": (self._required(record, "evidence", path, record_number),),
             "labels": {"label": _LABELS[label]},
-            "metadata": {
-                "case_id": record.get("case_id"),
-                "page": record.get("page"),
-                "revision_type": record.get("revision_type"),
-                "wiki_revision_id": record.get("wiki_revision_id"),
-            },
+            "metadata": metadata,
         }
