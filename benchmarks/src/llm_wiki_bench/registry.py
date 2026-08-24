@@ -10,13 +10,21 @@ from .adapters import (
     HoHAdapter,
     LongMemEvalAdapter,
     RGBBaseAdapter,
+    RGBIntegrationAdapter,
     VitaminCAdapter,
 )
 
 
 _ADAPTERS: dict[str, BenchmarkAdapter] = {
     adapter.name: adapter
-    for adapter in (LongMemEvalAdapter(), HoHAdapter(), VitaminCAdapter(), RGBBaseAdapter(), FactLensAdapter())
+    for adapter in (
+        LongMemEvalAdapter(),
+        HoHAdapter(),
+        VitaminCAdapter(),
+        RGBBaseAdapter(),
+        RGBIntegrationAdapter(),
+        FactLensAdapter(),
+    )
 }
 
 
