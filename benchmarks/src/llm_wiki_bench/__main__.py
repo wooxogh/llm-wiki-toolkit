@@ -10,6 +10,7 @@ from .registry import enabled_adapters, get_adapter
 from .reports import write_report
 from .runner import (
     check_conformance,
+    dataset_entry_errors,
     load_config,
     load_predictions,
     run_suite,
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("; ".join(errors))
             for adapter in enabled_adapters(config):
                 conformance_report = check_conformance(adapter, config["datasets"][adapter.name], args.sample)
-                if conformance_report["failures"]:
+                if conformance_report["failure_count"]:
                     raise ValueError(f"{adapter.name}: " + "; ".join(conformance_report["failures"]))
                 print(f"{adapter.name}: {conformance_report['checked']}/{conformance_report['record_count']} sampled ok")
             print("valid")
@@ -51,19 +52,43 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "conformance":
             config = load_config(args.config)
             names = [args.suite] if args.suite else [adapter.name for adapter in enabled_adapters(config)]
+            # A config-level error (a bad path, a non-string split, a missing
+            # entry) must surface as a config error before any record is
+            # read: otherwise a single misconfigured value fails every
+            # record in the source with the same message, drowning the root
+            # cause under however many records the release has. Validate
+            # every dataset entry in scope up front, across all suites in
+            # scope, before touching any of them.
+            datasets = config.get("datasets")
+            if not isinstance(datasets, dict):
+                raise ValueError("datasets must be a mapping")
+            errors: list[str] = []
+            entries: dict[str, dict] = {}
+            for name in names:
+                details = datasets.get(name)
+                if not isinstance(details, dict):
+                    errors.append(f"datasets.{name} is required")
+                    continue
+                entry_errors = dataset_entry_errors(name, details)
+                if entry_errors:
+                    errors.extend(entry_errors)
+                else:
+                    entries[name] = details
+            if errors:
+                raise ValueError("; ".join(errors))
             failed = False
             for name in names:
                 adapter = get_adapter(name)
-                datasets = config.get("datasets")
-                dataset = datasets.get(name) if isinstance(datasets, dict) else None
-                if not isinstance(dataset, dict):
-                    raise ValueError(f"{name}: not configured")
-                conformance_report = check_conformance(adapter, dataset, None)
-                status = "ok" if not conformance_report["failures"] else f"{len(conformance_report['failures'])} failures"
+                conformance_report = check_conformance(adapter, entries[name], None)
+                failure_count = conformance_report["failure_count"]
+                status = "ok" if not failure_count else f"{failure_count} failures"
                 print(f"{name}: {conformance_report['record_count']} records, {conformance_report['content_digest']}, {status}")
                 for failure in conformance_report["failures"]:
                     print(f"  {failure}")
-                failed = failed or bool(conformance_report["failures"])
+                omitted = failure_count - len(conformance_report["failures"])
+                if omitted > 0:
+                    print(f"  ... and {omitted} more")
+                failed = failed or bool(failure_count)
             return 1 if failed else 0
         if args.command == "run":
             config = load_config(args.config)

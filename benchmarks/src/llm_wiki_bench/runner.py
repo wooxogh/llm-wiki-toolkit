@@ -51,6 +51,32 @@ def _invalid_top_k(config: Mapping[str, Any]) -> bool:
     return isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1
 
 
+def dataset_entry_errors(suite: str, details: Any) -> list[str]:
+    """Return every structural error in one ``datasets.<suite>`` entry.
+
+    Shared by ``validate_config`` (which checks every configured suite) and
+    the ``conformance`` CLI dispatch (which must validate the handful of
+    suites it is about to read before reading any of them, even when
+    ``--suite`` narrows scope to less than the whole config).
+    """
+    if not isinstance(details, dict):
+        return [f"datasets.{suite} must be a mapping"]
+    errors: list[str] = []
+    for key in ("path", "version", "split"):
+        if not _nonblank(details.get(key)):
+            errors.append(f"datasets.{suite}.{key} is required")
+    path = details.get("path")
+    if _nonblank(path) and not Path(path).is_file():
+        errors.append(f"datasets.{suite}.path does not exist: {path}")
+    digest = details.get("expected_digest")
+    if digest is not None and not _nonblank(digest):
+        errors.append(f"datasets.{suite}.expected_digest must be a non-blank string")
+    parameters = details.get("run_parameters")
+    if parameters is not None and not isinstance(parameters, dict):
+        errors.append(f"datasets.{suite}.run_parameters must be a mapping")
+    return errors
+
+
 def validate_config(config: dict) -> list[str]:
     """Return every structural error, and confirm each source file exists."""
     errors: list[str] = []
@@ -70,21 +96,7 @@ def validate_config(config: dict) -> list[str]:
         details = datasets.get(suite)
         if details is None:
             continue
-        if not isinstance(details, dict):
-            errors.append(f"datasets.{suite} must be a mapping")
-            continue
-        for key in ("path", "version", "split"):
-            if not _nonblank(details.get(key)):
-                errors.append(f"datasets.{suite}.{key} is required")
-        path = details.get("path")
-        if _nonblank(path) and not Path(path).is_file():
-            errors.append(f"datasets.{suite}.path does not exist: {path}")
-        digest = details.get("expected_digest")
-        if digest is not None and not _nonblank(digest):
-            errors.append(f"datasets.{suite}.expected_digest must be a non-blank string")
-        parameters = details.get("run_parameters")
-        if parameters is not None and not isinstance(parameters, dict):
-            errors.append(f"datasets.{suite}.run_parameters must be a mapping")
+        errors.extend(dataset_entry_errors(suite, details))
     return errors
 
 
@@ -114,11 +126,27 @@ def load_predictions(path: Path) -> dict[str, Prediction]:
     return predictions
 
 
-def check_conformance(adapter: BenchmarkAdapter, dataset: dict, limit: int | None) -> dict:
+_MAX_REPORTED_FAILURES = 20
+
+
+def check_conformance(
+    adapter: BenchmarkAdapter,
+    dataset: dict,
+    limit: int | None,
+    max_reported_failures: int = _MAX_REPORTED_FAILURES,
+) -> dict:
     """Normalize a source and report every record that fails.
 
     ``limit=None`` reads the whole file. A digest is always returned, so a
     conformance report names the exact bytes it checked.
+
+    A source-wide problem (a bad split, a systemic upstream field) fails
+    every record with the same message, so ``failures`` reports only the
+    first ``max_reported_failures`` (default 20 -- enough to see whether the
+    failures vary by record or repeat the same root cause, small enough that
+    the digest line and totals stay on screen even when a whole 100k+ record
+    release fails). ``failure_count`` is never capped, so the caller always
+    knows the true total.
     """
     source = Path(dataset["path"])
     if not source.is_file():
@@ -126,6 +154,7 @@ def check_conformance(adapter: BenchmarkAdapter, dataset: dict, limit: int | Non
     reader = READERS[adapter.container]
     split = dataset.get("split") or source.stem
     failures: list[str] = []
+    failure_count = 0
     record_count = 0
     checked = 0
     for record_number, record in reader(source):
@@ -149,10 +178,13 @@ def check_conformance(adapter: BenchmarkAdapter, dataset: dict, limit: int | Non
                 **values,
             )
         except (TypeError, ValueError) as error:
-            failures.append(f"record {record_number}: {error}")
+            failure_count += 1
+            if len(failures) < max_reported_failures:
+                failures.append(f"record {record_number}: {error}")
     return {
         "checked": checked,
         "content_digest": file_digest(source),
+        "failure_count": failure_count,
         "failures": tuple(failures),
         "record_count": record_count,
         "suite": adapter.name,
