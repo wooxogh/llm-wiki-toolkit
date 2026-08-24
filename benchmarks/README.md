@@ -34,7 +34,7 @@ Install the benchmark package, then run commands from the repository root so
 the paths in the configuration resolve consistently:
 
 ```bash
-pip install -e benchmarks
+pip install -e 'benchmarks[dev]'
 
 python -m llm_wiki_bench validate --config benchmarks/configs/suite.local.yaml
 python -m llm_wiki_bench run \
@@ -62,6 +62,17 @@ Each run writes:
 Treat the configuration together with this manifest as run provenance. Preserve
 the local configuration copy and the recorded prediction file alongside any
 published comparison.
+
+## Tests
+
+The benchmark tests run from either root. From the repository root they are
+collected alongside the main suite; from `benchmarks/` they run standalone
+against the source tree:
+
+```bash
+pytest                  # repository root: main suite + benchmark tests
+cd benchmarks && pytest # benchmark tests only
+```
 
 ## Metric semantics
 
