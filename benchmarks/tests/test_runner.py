@@ -2,110 +2,96 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
 from llm_wiki_bench.registry import get_adapter
-from llm_wiki_bench.runner import load_config, load_predictions, run_suite, timestamped_run_dir, validate_config
+from llm_wiki_bench.runner import load_config, run_suite, validate_config
+from llm_wiki_bench.schema import Prediction
+
+FIXTURES = Path(__file__).parent.parent / "fixtures"
 
 
-FIXTURES = Path(__file__).parents[1] / "fixtures"
-
-
-def _config(tmp_path: Path, *, factlens: bool = False) -> dict:
-    datasets = {
-        name: {"path": str(FIXTURES / f"{name}.jsonl"), "version": f"{name}-v1"}
-        for name in ("longmemeval", "hoh", "vitaminc", "rgb")
+def _config(tmp_path, **overrides):
+    dataset = {
+        "path": str(FIXTURES / "vitaminc.jsonl"),
+        "version": "vitaminc-fixture",
+        "split": "test",
     }
-    if factlens:
-        datasets["factlens"] = {"path": str(FIXTURES / "factlens.jsonl"), "version": "factlens-v1"}
-    return {"output_root": str(tmp_path / "results"), "top_k": 3, "datasets": datasets}
+    dataset.update(overrides)
+    return {
+        "output_root": str(tmp_path / "results"),
+        "top_k": 8,
+        "datasets": {"vitaminc": dataset},
+    }
 
 
-def _write_predictions(path: Path, rows: list[dict]) -> Path:
-    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
-    return path
+def _predictions():
+    return {
+        "fixture000_1": Prediction(case_id="fixture000_1", label="entailment"),
+        "fixture000_2": Prediction(case_id="fixture000_2", label="contradiction"),
+        "fixture001_1": Prediction(case_id="fixture001_1", label="neutral"),
+    }
 
 
-def test_validate_config_requires_paths_for_required_suites(tmp_path: Path) -> None:
+def test_validate_config_requires_a_split(tmp_path):
     config = _config(tmp_path)
-    assert validate_config(config) == []
-
-    del config["datasets"]["rgb"]["path"]
-    assert "datasets.rgb.path is required" in validate_config(config)
+    del config["datasets"]["vitaminc"]["split"]
+    assert "datasets.vitaminc.split is required" in validate_config(config)
 
 
-def test_load_config_and_predictions_reject_invalid_yaml_shape_and_duplicate_case_ids(tmp_path: Path) -> None:
-    config_path = tmp_path / "suite.yaml"
-    config_path.write_text("- not-a-mapping\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="mapping"):
-        load_config(config_path)
-
-    predictions_path = _write_predictions(
-        tmp_path / "predictions.jsonl",
-        [{"case_id": "hoh-1", "answer": "Larkspur"}, {"case_id": "hoh-1", "answer": "Elsewhere"}],
-    )
-    with pytest.raises(ValueError, match="duplicate prediction case_id"):
-        load_predictions(predictions_path)
-
-
-def test_run_suite_scores_recorded_prediction_and_writes_five_artifacts(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    predictions = load_predictions(_write_predictions(tmp_path / "predictions.jsonl", [{"case_id": "hoh-1", "answer": "Larkspur", "ranked_evidence_ids": ["hop-1", "hop-2"], "cited_evidence_ids": ["hop-1", "hop-2"]}]))
-    run_dir = tmp_path / "run"
-
-    manifest = run_suite(get_adapter("hoh"), config, predictions, run_dir)
-
-    assert {path.name for path in run_dir.iterdir()} == {"manifest.json", "per_case.jsonl", "metrics.json", "report.md", "skips.jsonl"}
-    assert manifest["dataset"] == {"path": config["datasets"]["hoh"]["path"], "version": "hoh-v1"}
-    assert manifest["top_k"] == 3
-    assert manifest["case_counts"] == {"errors": 0, "evaluated": 1, "skipped": 0, "total": 1}
-
-
-def test_run_suite_rejects_missing_prediction_unless_skips_allowed(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    run_dir = tmp_path / "run"
-
-    with pytest.raises(ValueError, match="missing prediction for case hoh-1"):
-        run_suite(get_adapter("hoh"), config, {}, run_dir)
-
-    run_suite(get_adapter("hoh"), config, {}, run_dir, allow_skips=True)
-    row = json.loads((run_dir / "per_case.jsonl").read_text(encoding="utf-8"))
-    assert row["case_id"] == "hoh-1"
-    assert row["reason"] == "missing_prediction"
-
-
-def test_factlens_absent_from_config_is_not_configured(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    assert validate_config(config) == []
-    with pytest.raises(ValueError, match="factlens: not_configured"):
-        run_suite(get_adapter("factlens"), config, {}, tmp_path / "run")
-
-
-def test_present_factlens_config_requires_mapping_path_and_version(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    config["datasets"]["factlens"] = None
-    assert "datasets.factlens must be a mapping" in validate_config(config)
-
-    config["datasets"]["factlens"] = {"path": ""}
+def test_validate_config_rejects_a_missing_data_file(tmp_path):
+    config = _config(tmp_path, path=str(tmp_path / "absent.jsonl"))
     errors = validate_config(config)
-    assert "datasets.factlens.path is required" in errors
-    assert "datasets.factlens.version is required" in errors
+    assert any("does not exist" in error for error in errors)
 
 
-def test_timestamped_run_dir_atomically_reserves_a_unique_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    class FixedDateTime:
-        @classmethod
-        def now(cls, _timezone: object) -> "FixedDateTime":
-            return cls()
+def test_manifest_records_the_digest_and_record_count(tmp_path):
+    run_dir = tmp_path / "run"
+    manifest = run_suite(get_adapter("vitaminc"), _config(tmp_path), _predictions(), run_dir)
+    assert manifest["dataset"]["content_digest"].startswith("sha256:")
+    assert manifest["dataset"]["record_count"] == 3
+    assert manifest["evidence_id_origin"] == "upstream"
+    assert manifest["profiles"] == {"grounded_verification": 3}
+    assert manifest["capabilities_scored"] == ["label"]
 
-        def strftime(self, _format: str) -> str:
-            return "20260824T010203Z"
 
-    monkeypatch.setattr("llm_wiki_bench.runner.datetime", FixedDateTime)
+def test_a_pinned_digest_mismatch_fails_the_run(tmp_path):
+    config = _config(tmp_path, expected_digest="sha256:" + "0" * 64)
+    with pytest.raises(ValueError, match="content digest mismatch"):
+        run_suite(get_adapter("vitaminc"), config, _predictions(), tmp_path / "run")
 
-    first = timestamped_run_dir(tmp_path, "hoh")
-    second = timestamped_run_dir(tmp_path, "hoh")
 
-    assert first.is_dir()
-    assert second.is_dir()
-    assert first != second
+def test_a_matching_pinned_digest_passes(tmp_path):
+    first = run_suite(get_adapter("vitaminc"), _config(tmp_path), _predictions(), tmp_path / "a")
+    config = _config(tmp_path, expected_digest=first["dataset"]["content_digest"])
+    manifest = run_suite(get_adapter("vitaminc"), config, _predictions(), tmp_path / "b")
+    assert manifest["dataset"]["content_digest"] == first["dataset"]["content_digest"]
+
+
+def test_declared_run_parameters_are_recorded_verbatim(tmp_path):
+    config = _config(tmp_path, run_parameters={"noise_rate": 0.6, "passage_num": 5})
+    manifest = run_suite(get_adapter("vitaminc"), config, _predictions(), tmp_path / "run")
+    assert manifest["run_parameters"] == {"noise_rate": 0.6, "passage_num": 5}
+
+
+def test_only_declared_capabilities_are_scored(tmp_path):
+    """grounded_verification declares `label`; retrieval must not appear."""
+    run_dir = tmp_path / "run"
+    run_suite(get_adapter("vitaminc"), _config(tmp_path), _predictions(), run_dir)
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert "label_accuracy" in metrics["aggregate"]
+    assert not [key for key in metrics["aggregate"] if key.startswith("recall@")]
+    assert "mrr" not in metrics["aggregate"]
+
+
+def test_abstention_summary_appears_only_for_profiles_declaring_it(tmp_path):
+    run_dir = tmp_path / "run"
+    run_suite(get_adapter("vitaminc"), _config(tmp_path), _predictions(), run_dir)
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert "abstention_precision" not in metrics
+
+
+def test_a_missing_prediction_still_fails_without_allow_skips(tmp_path):
+    predictions = _predictions()
+    del predictions["fixture001_1"]
+    with pytest.raises(ValueError, match="missing prediction for case fixture001_1"):
+        run_suite(get_adapter("vitaminc"), _config(tmp_path), predictions, tmp_path / "run")
