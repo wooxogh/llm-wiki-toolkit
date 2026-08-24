@@ -7,8 +7,20 @@ from math import isfinite
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
+from .profiles import capability_requirements, get_profile
 
-DATASETS = frozenset({"longmemeval", "hoh", "vitaminc", "rgb", "factlens"})
+
+DATASETS = frozenset(
+    {
+        "longmemeval",
+        "hoh",
+        "vitaminc",
+        "factlens",
+        "rgb_base",
+        "rgb_integration",
+        "rgb_counterfactual",
+    }
+)
 
 
 def _freeze(value: Any) -> Any:
@@ -45,11 +57,13 @@ class BenchmarkCase:
     id: str
     dataset: str
     split: str
-    task: str
+    profile: str
     prompt: str
     labels: Mapping[str, Any]
     context: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
+    fine_evidence_ids: tuple[str, ...] = ()
+    expects_abstention: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -59,6 +73,9 @@ class BenchmarkCase:
             raise ValueError("metadata must be a dictionary")
         object.__setattr__(self, "context", _normalize_strings(self.context, "context"))
         object.__setattr__(self, "evidence_ids", _normalize_strings(self.evidence_ids, "evidence_ids"))
+        object.__setattr__(
+            self, "fine_evidence_ids", _normalize_strings(self.fine_evidence_ids, "fine_evidence_ids")
+        )
         object.__setattr__(self, "labels", _freeze(self.labels))
         object.__setattr__(self, "metadata", _freeze(self.metadata))
         validate_case(self)
@@ -71,6 +88,7 @@ class Prediction:
     label: str | None = None
     ranked_evidence_ids: tuple[str, ...] = ()
     cited_evidence_ids: tuple[str, ...] = ()
+    sub_claim_labels: tuple[str, ...] = ()
     abstained: bool = False
     latency_ms: float | None = None
 
@@ -85,6 +103,11 @@ class Prediction:
             "cited_evidence_ids",
             _normalize_strings(self.cited_evidence_ids, "cited_evidence_ids"),
         )
+        object.__setattr__(
+            self,
+            "sub_claim_labels",
+            _normalize_strings(self.sub_claim_labels, "sub_claim_labels"),
+        )
         validate_prediction(self)
 
 
@@ -94,10 +117,37 @@ def validate_case(case: BenchmarkCase) -> None:
     if case.dataset not in DATASETS:
         raise ValueError(f"dataset must be one of: {', '.join(sorted(DATASETS))}")
     _require_nonblank(case.split, "split")
-    _require_nonblank(case.task, "task")
     _require_nonblank(case.prompt, "prompt")
+    if not isinstance(case.expects_abstention, bool):
+        raise ValueError("expects_abstention must be a boolean")
     if len(case.evidence_ids) != len(set(case.evidence_ids)):
         raise ValueError("evidence_ids must not contain duplicates")
+    if len(case.fine_evidence_ids) != len(set(case.fine_evidence_ids)):
+        raise ValueError("fine_evidence_ids must not contain duplicates")
+    _require_declared_capabilities(case)
+
+
+def _require_declared_capabilities(case: BenchmarkCase) -> None:
+    """Fail when a profile declares a capability the case has no data for.
+
+    Scoring must never quietly drop a metric because a field was empty; that is
+    how a partial run comes to look like a complete one.
+    """
+    profile = get_profile(case.profile)
+    for capability in sorted(profile.capabilities):
+        for requirement in capability_requirements(capability):
+            if not _has_requirement(case, requirement):
+                raise ValueError(f"{profile.name} requires {requirement} on case {case.id}")
+
+
+def _has_requirement(case: BenchmarkCase, requirement: str) -> bool:
+    if requirement.startswith("labels."):
+        value = case.labels.get(requirement.removeprefix("labels."))
+        return value is not None and (not isinstance(value, (str, tuple, list)) or len(value) > 0)
+    value = getattr(case, requirement)
+    if isinstance(value, bool):
+        return True
+    return bool(value)
 
 
 def validate_prediction(prediction: Prediction) -> None:
