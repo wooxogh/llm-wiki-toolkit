@@ -10,6 +10,7 @@ from .adapters import (
     HoHAdapter,
     LongMemEvalAdapter,
     RGBBaseAdapter,
+    RGBCounterfactualAdapter,
     RGBIntegrationAdapter,
     VitaminCAdapter,
 )
@@ -23,6 +24,7 @@ _ADAPTERS: dict[str, BenchmarkAdapter] = {
         VitaminCAdapter(),
         RGBBaseAdapter(),
         RGBIntegrationAdapter(),
+        RGBCounterfactualAdapter(),
         FactLensAdapter(),
     )
 }
