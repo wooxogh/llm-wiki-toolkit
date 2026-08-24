@@ -36,6 +36,7 @@ def test_capability_requirements_rejects_unknown_capability():
 def test_expected_profiles_are_registered():
     assert set(PROFILES) == {
         "memory_qa",
+        "memory_qa_abstention",
         "retrieval_qa",
         "multi_slot_retrieval_qa",
         "counterfactual_qa",
@@ -43,3 +44,9 @@ def test_expected_profiles_are_registered():
         "grounded_verification",
         "claim_decomposition",
     }
+
+
+def test_memory_qa_abstention_is_memory_qa_minus_fine_retrieval():
+    assert get_profile("memory_qa_abstention").capabilities == (
+        get_profile("memory_qa").capabilities - {"fine_retrieval"}
+    )

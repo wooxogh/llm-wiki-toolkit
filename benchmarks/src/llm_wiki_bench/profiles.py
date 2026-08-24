@@ -36,6 +36,7 @@ PROFILES: dict[str, Profile] = {
     profile.name: profile
     for profile in (
         Profile("memory_qa", frozenset({"retrieval", "fine_retrieval", "answer", "abstention"})),
+        Profile("memory_qa_abstention", frozenset({"retrieval", "answer", "abstention"})),
         Profile("retrieval_qa", frozenset({"retrieval", "answer", "citations"})),
         Profile("multi_slot_retrieval_qa", frozenset({"retrieval", "multi_slot_answer", "citations"})),
         Profile("counterfactual_qa", frozenset({"retrieval", "answer", "distractor_rejection"})),
