@@ -82,6 +82,58 @@ def test_missing_released_field_names_the_record(tmp_path):
         LongMemEvalAdapter().load(_write(tmp_path, [record]), split="oracle")
 
 
+def test_abs_record_with_no_answering_turn_gets_memory_qa_abstention(tmp_path):
+    record = {
+        "question_id": "test_abs_no_answer_abs",
+        "question_type": "test",
+        "question": "Will this happen?",
+        "answer": "unclear",
+        "question_date": "2024/03/01",
+        "haystack_session_ids": ["s1"],
+        "haystack_dates": ["2024/02/28"],
+        "haystack_sessions": [
+            [
+                {"role": "user", "content": "Some context"},
+                {"role": "assistant", "content": "No answer here"},
+            ]
+        ],
+        "answer_session_ids": ["s1"],
+    }
+    case = LongMemEvalAdapter().load(_write(tmp_path, [record]), split="oracle").cases[0]
+    assert case.profile == "memory_qa_abstention"
+    assert case.fine_evidence_ids == ()
+    assert case.expects_abstention is True
+
+
+def test_abs_record_with_answering_turn_stays_memory_qa(tmp_path):
+    record = {
+        "question_id": "test_abs_with_answer_abs",
+        "question_type": "test",
+        "question": "Will this happen?",
+        "answer": "yes",
+        "question_date": "2024/03/01",
+        "haystack_session_ids": ["s1"],
+        "haystack_dates": ["2024/02/28"],
+        "haystack_sessions": [
+            [
+                {"role": "user", "content": "This will happen"},
+                {"role": "assistant", "content": "Confirmed", "has_answer": True},
+            ]
+        ],
+        "answer_session_ids": ["s1"],
+    }
+    case = LongMemEvalAdapter().load(_write(tmp_path, [record]), split="oracle").cases[0]
+    assert case.profile == "memory_qa"
+    assert case.fine_evidence_ids == ("s1:1",)
+    assert case.expects_abstention is True
+
+
+def test_non_abs_record_stays_memory_qa(tmp_path):
+    case = LongMemEvalAdapter().load(_write(tmp_path, [RECORD]), split="oracle").cases[0]
+    assert case.profile == "memory_qa"
+    assert case.expects_abstention is False
+
+
 def test_the_committed_fixture_matches_the_released_shape(tmp_path):
     from pathlib import Path
 

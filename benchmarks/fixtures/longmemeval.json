@@ -30,9 +30,25 @@
     "haystack_sessions": [
       [
         {"role": "user", "content": "I renewed my passport."},
-        {"role": "assistant", "content": "Good timing.", "has_answer": true}
+        {"role": "assistant", "content": "Good timing."}
       ]
     ],
     "answer_session_ids": ["fixture-s3"]
+  },
+  {
+    "question_id": "fixture_answerable_abs",
+    "question_type": "single-session-user",
+    "question": "When did I book the trip?",
+    "answer": "two weeks ago",
+    "question_date": "2024/03/04 (Mon) 11:30",
+    "haystack_session_ids": ["fixture-s4"],
+    "haystack_dates": ["2024/02/20"],
+    "haystack_sessions": [
+      [
+        {"role": "user", "content": "I booked the trip two weeks ago."},
+        {"role": "assistant", "content": "Great timing.", "has_answer": true}
+      ]
+    ],
+    "answer_session_ids": ["fixture-s4"]
   }
 ]

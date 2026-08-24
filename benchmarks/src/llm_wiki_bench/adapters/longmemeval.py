@@ -62,6 +62,12 @@ class LongMemEvalAdapter(BenchmarkAdapter):
                 if turn.get("has_answer") is True:
                     fine_evidence_ids.append(f"{session_id}:{turn_index}")
 
+        expects_abstention = question_id.endswith("_abs")
+        # Use memory_qa_abstention profile for abstention questions with no answering turns.
+        # This allows fine_evidence_ids to be empty, which is the correct semantics.
+        has_answering_turn = len(fine_evidence_ids) > 0
+        profile = None if (has_answering_turn or not expects_abstention) else "memory_qa_abstention"
+
         metadata = self._metadata(record, _CONSUMED)
         metadata.update(
             {
@@ -69,13 +75,16 @@ class LongMemEvalAdapter(BenchmarkAdapter):
                 "question_date": record.get("question_date"),
             }
         )
-        return {
+        result = {
             "id": question_id,
             "prompt": self._required(record, "question", path, record_number),
             "context": tuple(context),
             "evidence_ids": tuple(self._required(record, "answer_session_ids", path, record_number)),
             "fine_evidence_ids": tuple(fine_evidence_ids),
             "labels": {"answers": (self._required(record, "answer", path, record_number),)},
-            "expects_abstention": question_id.endswith("_abs"),
+            "expects_abstention": expects_abstention,
             "metadata": metadata,
         }
+        if profile is not None:
+            result["profile"] = profile
+        return result
