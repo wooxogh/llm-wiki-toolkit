@@ -81,6 +81,37 @@ def test_require_documents_honors_the_required_flag_for_any_key(tmp_path):
     assert require_documents(record, "positive_wrong", path, 3, required=False) == []
 
 
+def test_two_distinct_answer_slots_use_the_multi_slot_profile_and_do_not_flatten(tmp_path):
+    """[["A"],["B"]] is two genuinely distinct required answers, not one
+    two-alias answer. Measured against the real en_refine.json (300 records):
+    outer answer-list lengths are {1: 288, 2: 9, 3: 1, 4: 1, 6: 1} -- 12 of
+    300 records are multi-slot and must not be silently flattened into one
+    accepted-answer tuple, which would let a prediction of just "A" score
+    exact_match 1.0 for answering only half the question."""
+    record = dict(RECORD, answer=[["A"], ["B"]])
+    case = RGBBaseAdapter().load(_write(tmp_path, [record]), split="en").cases[0]
+    assert case.profile == "multi_slot_retrieval_qa"
+    assert case.labels["answer_slots"] == (("A",), ("B",))
+    assert "answers" not in case.labels
+
+
+def test_a_single_slot_with_multiple_aliases_still_uses_the_retrieval_profile(tmp_path):
+    """A one-element outer list (288 of 300 real records) is one slot with
+    several accepted aliases, not multi-slot, and must keep flattening."""
+    record = dict(RECORD, answer=[["Tampa, Florida", "Tampa"]])
+    case = RGBBaseAdapter().load(_write(tmp_path, [record]), split="en").cases[0]
+    assert case.profile == "retrieval_qa"
+    assert case.labels["answers"] == ("Tampa, Florida", "Tampa")
+    assert "answer_slots" not in case.labels
+
+
+def test_three_answer_slots_are_each_kept_separate(tmp_path):
+    record = dict(RECORD, answer=[["A"], ["B"], ["C"]])
+    case = RGBBaseAdapter().load(_write(tmp_path, [record]), split="en").cases[0]
+    assert case.profile == "multi_slot_retrieval_qa"
+    assert case.labels["answer_slots"] == (("A",), ("B",), ("C",))
+
+
 def test_the_committed_fixture_matches_the_released_shape():
     fixture = Path(__file__).parent.parent / "fixtures" / "rgb_base.jsonl"
     result = RGBBaseAdapter().load(fixture, split="en")

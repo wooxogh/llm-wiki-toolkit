@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BenchmarkAdapter
-from .rgb_base import require_documents, synthesize_pool_ids
+from .rgb_base import parse_answer_slots, require_documents, synthesize_pool_ids
 
 _CONSUMED = {"id", "query", "answer", "positive", "negative"}
 
@@ -50,17 +50,7 @@ class RGBIntegrationAdapter(BenchmarkAdapter):
         value = self._required(record, "answer", path, record_number)
         if not isinstance(value, list) or len(value) < 2:
             raise ValueError(f"{path}: record {record_number}: answer must declare at least two slots")
-        slots: list[tuple[str, ...]] = []
-        for slot in value:
-            if isinstance(slot, str):
-                slots.append((slot,))
-            elif isinstance(slot, list) and slot and all(isinstance(alias, str) for alias in slot):
-                slots.append(tuple(slot))
-            else:
-                raise ValueError(
-                    f"{path}: record {record_number}: each answer slot must be a string or a non-empty list of strings"
-                )
-        return tuple(slots)
+        return parse_answer_slots(value, path, record_number)
 
     def _flatten_positive(self, record: dict[str, Any], path: Path, record_number: int) -> list[str]:
         value = record.get("positive")

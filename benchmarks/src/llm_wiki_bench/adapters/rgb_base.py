@@ -45,6 +45,44 @@ def flatten_answers(value: Any, path: Path, record_number: int) -> tuple[str, ..
     return tuple(answers)
 
 
+def parse_answer_slots(value: Any, path: Path, record_number: int) -> tuple[tuple[str, ...], ...]:
+    """Parse a `list[list[str]]` answer field into one tuple of aliases per slot.
+
+    Each outer element is a genuinely distinct required slot; a bare string
+    element is that slot's single alias. Shared by `rgb_base` (which uses
+    this only when the record is actually multi-slot; a single slot still
+    flattens through `flatten_answers`) and `rgb_integration` (always
+    multi-slot).
+    """
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{path}: record {record_number}: answer must be a non-empty list")
+    slots: list[tuple[str, ...]] = []
+    for item in value:
+        if isinstance(item, str):
+            slots.append((item,))
+        elif isinstance(item, list) and item and all(isinstance(alias, str) for alias in item):
+            slots.append(tuple(item))
+        else:
+            raise ValueError(
+                f"{path}: record {record_number}: each answer slot must be a string or a non-empty list of strings"
+            )
+    return tuple(slots)
+
+
+def is_multi_slot_answer(value: Any) -> bool:
+    """True when `value` is genuinely more than one required answer slot.
+
+    `en`/`en_refine` encode a single slot's aliases as one inner list, e.g.
+    `[["Lisbon", "Lisbon, Portugal"]]` -- a bare list of strings, one slot.
+    Only a list of two-or-more nested lists (`[["A"], ["B"]]`) is a case where
+    a prediction must satisfy every slot, not just alias-match one answer, so
+    only that shape routes to the `multi_slot_retrieval_qa` profile. Anything
+    else (a bare string, a flat list of string aliases, or a single-element
+    outer list) is one slot and keeps flattening through `flatten_answers`.
+    """
+    return isinstance(value, list) and len(value) > 1 and all(isinstance(item, list) for item in value)
+
+
 def synthesize_pool_ids(
     case_id: str, positive: list[str], negative: list[str]
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
@@ -88,15 +126,17 @@ class RGBBaseAdapter(BenchmarkAdapter):
         context, positive_ids, candidate_ids = synthesize_pool_ids(case_id, positive, negative)
         metadata = self._metadata(record, _CONSUMED)
         metadata["candidate_ids"] = candidate_ids
-        return {
+        answer = self._required(record, "answer", path, record_number)
+        case = {
             "id": case_id,
             "prompt": self._required(record, "query", path, record_number),
             "context": context,
             "evidence_ids": positive_ids,
-            "labels": {
-                "answers": flatten_answers(
-                    self._required(record, "answer", path, record_number), path, record_number
-                )
-            },
             "metadata": metadata,
         }
+        if is_multi_slot_answer(answer):
+            case["labels"] = {"answer_slots": parse_answer_slots(answer, path, record_number)}
+            case["profile"] = "multi_slot_retrieval_qa"
+        else:
+            case["labels"] = {"answers": flatten_answers(answer, path, record_number)}
+        return case
