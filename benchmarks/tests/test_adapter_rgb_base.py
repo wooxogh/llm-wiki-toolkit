@@ -78,7 +78,7 @@ def test_require_documents_honors_the_required_flag_for_any_key(tmp_path):
     record = {"positive_wrong": []}
     with pytest.raises(ValueError, match="record 3: positive_wrong must be a non-empty list"):
         require_documents(record, "positive_wrong", path, 3, required=True)
-    assert require_documents(record, "positive_wrong", path, 3) == []
+    assert require_documents(record, "positive_wrong", path, 3, required=False) == []
 
 
 def test_the_committed_fixture_matches_the_released_shape():

@@ -55,8 +55,14 @@ def synthesize_pool_ids(
 
 
 def require_documents(
-    record: dict[str, Any], key: str, path: Path, record_number: int, *, required: bool = False
+    record: dict[str, Any], key: str, path: Path, record_number: int, *, required: bool
 ) -> list[str]:
+    """Return record[key] as a list of strings; caller declares whether it must be non-empty.
+
+    `required` has no default: every call site must state its own requirement,
+    so a caller who needs non-empty validation for a new key cannot forget the
+    flag and silently get pass-through tolerance instead.
+    """
     value = record.get(key)
     if required and (not isinstance(value, list) or not value):
         raise ValueError(f"{path}: record {record_number}: {key} must be a non-empty list")
@@ -78,7 +84,7 @@ class RGBBaseAdapter(BenchmarkAdapter):
     ) -> dict[str, Any]:
         case_id = str(self._required(record, "id", path, record_number))
         positive = require_documents(record, "positive", path, record_number, required=True)
-        negative = require_documents(record, "negative", path, record_number)
+        negative = require_documents(record, "negative", path, record_number, required=False)
         context, positive_ids, candidate_ids = synthesize_pool_ids(case_id, positive, negative)
         metadata = self._metadata(record, _CONSUMED)
         metadata["candidate_ids"] = candidate_ids
