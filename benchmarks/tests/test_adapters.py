@@ -1,60 +1,66 @@
+import json
 from pathlib import Path
 
 import pytest
 
-from llm_wiki_bench.adapters.factlens import FactLensAdapter
-from llm_wiki_bench.adapters.hoh import HoHAdapter
-from llm_wiki_bench.adapters.longmemeval import LongMemEvalAdapter
-from llm_wiki_bench.adapters.rgb import RGBAdapter
-from llm_wiki_bench.adapters.vitaminc import VitaminCAdapter
+from llm_wiki_bench.adapters.base import BenchmarkAdapter, LoadResult
 
 
-FIXTURES = Path(__file__).parents[1] / "fixtures"
+class _Stub(BenchmarkAdapter):
+    name = "vitaminc"
+    profile = "grounded_verification"
+    container = "jsonl"
+    evidence_id_origin = "upstream"
+
+    def normalize(self, record, path, record_number, split):
+        return {
+            "id": str(record["unique_id"]),
+            "prompt": record["claim"],
+            "labels": {"label": "entailment"},
+            "metadata": {},
+        }
 
 
-@pytest.mark.parametrize(
-    ("adapter", "fixture", "dataset", "task", "labels"),
-    [
-        (LongMemEvalAdapter(), "longmemeval.jsonl", "longmemeval", "memory_qa", {"answers": ("the blue vase",)}),
-        (HoHAdapter(), "hoh.jsonl", "hoh", "multi_hop_qa", {"answers": ("Larkspur",)}),
-        (VitaminCAdapter(), "vitaminc.jsonl", "vitaminc", "verification", {"label": "entailment"}),
-        (RGBAdapter(), "rgb.jsonl", "rgb", "rag_qa", {"answers": ("2022",)}),
-    ],
-)
-def test_required_adapter_normalizes_its_fixture_contract(
-    adapter, fixture: str, dataset: str, task: str, labels: dict
-) -> None:
-    case = adapter.load(FIXTURES / fixture)[0]
-
-    assert case.dataset == dataset
-    assert case.task == task
-    assert case.labels == labels
-    assert case.metadata["source_version"] == f"{dataset}-fixture-v1"
-    assert case.metadata["source_path"] == str(FIXTURES / fixture)
-    assert case.metadata["source_record"] == 1
-
-
-def test_hoh_preserves_all_two_hop_evidence_ids() -> None:
-    case = HoHAdapter().load(FIXTURES / "hoh.jsonl")[0]
-
-    assert case.evidence_ids == ("hop-1", "hop-2")
-
-
-def test_vitaminc_unknown_label_names_its_source_record(tmp_path: Path) -> None:
-    source = tmp_path / "vitaminc.jsonl"
-    source.write_text(
-        '{"id":"vc-bad","split":"test","source_version":"v1","claim":"Claim","evidence":"Evidence","evidence_id":"e-1","label":"MAYBE"}\n',
+def _source(tmp_path: Path) -> Path:
+    path = tmp_path / "test.jsonl"
+    path.write_text(
+        json.dumps({"unique_id": "u1", "claim": "c1"}) + "\n"
+        + json.dumps({"unique_id": "u2", "claim": "c2"}) + "\n",
         encoding="utf-8",
     )
-
-    with pytest.raises(ValueError, match=r"record 1.*MAYBE"):
-        VitaminCAdapter().load(source)
+    return path
 
 
-def test_factlens_normalizes_its_verification_fixture() -> None:
-    case = FactLensAdapter().load(FIXTURES / "factlens.jsonl")[0]
+def test_load_returns_cases_with_the_configured_split(tmp_path):
+    result = _Stub().load(_source(tmp_path), split="test")
+    assert isinstance(result, LoadResult)
+    assert [case.id for case in result.cases] == ["u1", "u2"]
+    assert {case.split for case in result.cases} == {"test"}
+    assert {case.profile for case in result.cases} == {"grounded_verification"}
 
-    assert case.dataset == "factlens"
-    assert case.task == "factual_consistency"
-    assert case.labels == {"label": "supported"}
-    assert case.evidence_ids == ("fl-source-1",)
+
+def test_load_reports_digest_and_record_count(tmp_path):
+    result = _Stub().load(_source(tmp_path), split="test")
+    assert result.record_count == 2
+    assert result.content_digest.startswith("sha256:")
+
+
+def test_load_records_provenance_in_case_metadata(tmp_path):
+    source = _source(tmp_path)
+    case = _Stub().load(source, split="test").cases[0]
+    assert case.metadata["source_path"] == str(source)
+    assert case.metadata["source_record"] == 1
+    assert "source_version" not in case.metadata
+
+
+def test_load_rejects_a_blank_split(tmp_path):
+    with pytest.raises(ValueError, match="split must be a non-blank string"):
+        _Stub().load(_source(tmp_path), split="  ")
+
+
+def test_load_rejects_an_unknown_container():
+    class _Bad(_Stub):
+        container = "xml"
+
+    with pytest.raises(ValueError, match="unknown container: xml"):
+        _Bad().load(Path("unused.jsonl"), split="test")
