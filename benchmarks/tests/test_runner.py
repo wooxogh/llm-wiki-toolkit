@@ -95,3 +95,17 @@ def test_a_missing_prediction_still_fails_without_allow_skips(tmp_path):
     del predictions["fixture001_1"]
     with pytest.raises(ValueError, match="missing prediction for case fixture001_1"):
         run_suite(get_adapter("vitaminc"), _config(tmp_path), predictions, tmp_path / "run")
+
+
+def test_run_suite_rejects_a_missing_top_k(tmp_path):
+    config = _config(tmp_path)
+    del config["top_k"]
+    with pytest.raises(ValueError, match="top_k must be a positive integer"):
+        run_suite(get_adapter("vitaminc"), config, _predictions(), tmp_path / "run")
+
+
+def test_run_suite_rejects_a_non_positive_top_k(tmp_path):
+    config = _config(tmp_path)
+    config["top_k"] = 0
+    with pytest.raises(ValueError, match="top_k must be a positive integer"):
+        run_suite(get_adapter("vitaminc"), config, _predictions(), tmp_path / "run")

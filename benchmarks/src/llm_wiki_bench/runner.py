@@ -42,6 +42,14 @@ def load_config(path: Path) -> dict:
     return config
 
 
+_TOP_K_ERROR = "top_k must be a positive integer"
+
+
+def _invalid_top_k(config: Mapping[str, Any]) -> bool:
+    top_k = config.get("top_k")
+    return isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1
+
+
 def validate_config(config: dict) -> list[str]:
     """Return every structural error, and confirm each source file exists."""
     errors: list[str] = []
@@ -49,9 +57,8 @@ def validate_config(config: dict) -> list[str]:
         return ["config must be a mapping"]
     if not _nonblank(config.get("output_root")):
         errors.append("output_root is required")
-    top_k = config.get("top_k")
-    if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
-        errors.append("top_k must be a positive integer")
+    if _invalid_top_k(config):
+        errors.append(_TOP_K_ERROR)
     datasets = config.get("datasets")
     if not isinstance(datasets, dict):
         return errors + ["datasets must be a mapping"]
@@ -115,13 +122,16 @@ def run_suite(
 ) -> dict:
     """Score recorded predictions for one normalized suite and persist artifacts.
 
-    This validates only the one dataset entry this adapter needs, not the
-    whole config's required-suite roster; a caller that must reject an
-    incomplete multi-suite config up front should call ``validate_config``
-    itself, as the CLI does before dispatching to ``run_suite``.
+    This validates only what ``run_suite`` itself depends on: the one dataset
+    entry this adapter needs, and ``top_k``. It does not enforce the whole
+    config's required-suite roster; a caller that must reject an incomplete
+    multi-suite config up front should call ``validate_config`` itself, as the
+    CLI does before dispatching to ``run_suite``.
     """
     if not isinstance(config, dict) or not isinstance(config.get("datasets"), dict):
         raise ValueError("config must be a mapping with a datasets mapping")
+    if _invalid_top_k(config):
+        raise ValueError(_TOP_K_ERROR)
     dataset = _dataset_config(adapter, config)
     result = adapter.load(Path(dataset["path"]), split=dataset["split"])
     expected_digest = dataset.get("expected_digest")
