@@ -34,6 +34,24 @@ def test_each_answer_slot_is_kept_separate(tmp_path):
     )
 
 
+def test_three_answer_slots_are_each_kept_separate(tmp_path):
+    # Real en_int.json records go beyond two slots (2x94, 3x3, 4x1, 6x2 in the
+    # released file), so a fixture that only ever exercises two slots would
+    # not catch a two-slot assumption in `_answer_slots`.
+    record = dict(
+        RECORD,
+        id=1,
+        answer=[["January 2 2022"], ["Ada Lovelace"], ["Paris"]],
+        positive=[["The summit opened."], ["Ada Lovelace chaired it."], ["It was held in Paris."]],
+    )
+    case = RGBIntegrationAdapter().load(_write(tmp_path, [record]), split="en_int").cases[0]
+    assert case.labels["answer_slots"] == (
+        ("January 2 2022",),
+        ("Ada Lovelace",),
+        ("Paris",),
+    )
+
+
 def test_grouped_positive_documents_flatten_in_order(tmp_path):
     case = RGBIntegrationAdapter().load(_write(tmp_path, [RECORD]), split="en_int").cases[0]
     assert case.context[:2] == (

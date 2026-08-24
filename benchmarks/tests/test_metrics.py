@@ -153,6 +153,34 @@ def test_multi_slot_answer_reports_partial_coverage():
     assert scores == {"slot_coverage": 0.5, "all_slots_matched": 0.0}
 
 
+def test_multi_slot_answer_handles_more_than_two_slots_fully_matched():
+    # RGB's integration variant asks up to six sub-questions in one query
+    # (real distribution: 2x94, 3x3, 4x1, 6x2), so nothing may assume two slots.
+    scores = score_multi_slot_answer(
+        (
+            ("January 2 2022", "Jan 2, 2022"),
+            ("Ada Lovelace",),
+            ("Paris",),
+            ("United Nations", "UN"),
+        ),
+        "On Jan 2, 2022 Ada Lovelace addressed the UN in Paris",
+    )
+    assert scores == {"slot_coverage": 1.0, "all_slots_matched": 1.0}
+
+
+def test_multi_slot_answer_handles_more_than_two_slots_partially_matched():
+    scores = score_multi_slot_answer(
+        (
+            ("January 2 2022",),
+            ("Ada Lovelace",),
+            ("Paris",),
+            ("United Nations", "UN"),
+        ),
+        "Ada Lovelace addressed the UN in Paris",
+    )
+    assert scores == {"slot_coverage": 0.75, "all_slots_matched": 0.0}
+
+
 def test_sub_claim_accuracy_and_macro_f1():
     scores = score_sub_claims(("true", "false", "true"), ("true", "true", "true"))
     assert scores["sub_claim_accuracy"] == pytest.approx(2 / 3)
