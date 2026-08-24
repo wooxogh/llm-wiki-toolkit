@@ -26,9 +26,10 @@ from .metrics import (
     score_sub_claims,
 )
 from .profiles import get_profile
+from .readers import READERS, file_digest
 from .registry import OPTIONAL_SUITES, REQUIRED_SUITES
 from .reports import write_report
-from .schema import Prediction
+from .schema import BenchmarkCase, Prediction
 
 
 def load_config(path: Path) -> dict:
@@ -111,6 +112,51 @@ def load_predictions(path: Path) -> dict[str, Prediction]:
             raise ValueError(f"{path}: duplicate prediction case_id {prediction.case_id!r}")
         predictions[prediction.case_id] = prediction
     return predictions
+
+
+def check_conformance(adapter: BenchmarkAdapter, dataset: dict, limit: int | None) -> dict:
+    """Normalize a source and report every record that fails.
+
+    ``limit=None`` reads the whole file. A digest is always returned, so a
+    conformance report names the exact bytes it checked.
+    """
+    source = Path(dataset["path"])
+    if not source.is_file():
+        raise ValueError(f"{adapter.name}: source does not exist: {source}")
+    reader = READERS[adapter.container]
+    split = dataset.get("split") or source.stem
+    failures: list[str] = []
+    record_count = 0
+    checked = 0
+    for record_number, record in reader(source):
+        record_count += 1
+        if limit is not None and checked >= limit:
+            continue
+        checked += 1
+        try:
+            values = adapter.normalize(record, source, record_number, split)
+            metadata = dict(values.pop("metadata", {}))
+            if "profile" in values:
+                profile = values.pop("profile")
+                get_profile(profile)
+            else:
+                profile = adapter.profile
+            BenchmarkCase(
+                dataset=adapter.name,
+                split=split,
+                profile=profile,
+                metadata=metadata,
+                **values,
+            )
+        except (TypeError, ValueError) as error:
+            failures.append(f"record {record_number}: {error}")
+    return {
+        "checked": checked,
+        "content_digest": file_digest(source),
+        "failures": tuple(failures),
+        "record_count": record_count,
+        "suite": adapter.name,
+    }
 
 
 def run_suite(
