@@ -1,32 +1,51 @@
-from pathlib import Path
-
 import pytest
 
-from llm_wiki_bench.registry import enabled_adapters, get_adapter
+from llm_wiki_bench.registry import (
+    OPTIONAL_SUITES,
+    REQUIRED_SUITES,
+    enabled_adapters,
+    get_adapter,
+)
 
 
-def test_registry_returns_each_required_adapter() -> None:
-    assert [get_adapter(name).name for name in ("longmemeval", "hoh", "vitaminc", "rgb")] == [
-        "longmemeval",
+def test_every_suite_is_registered():
+    for name in (*REQUIRED_SUITES, *OPTIONAL_SUITES):
+        assert get_adapter(name).name == name
+
+
+def test_required_suites_are_the_six_non_optional_ones():
+    assert REQUIRED_SUITES == (
         "hoh",
+        "longmemeval",
+        "rgb_base",
+        "rgb_counterfactual",
+        "rgb_integration",
         "vitaminc",
-        "rgb",
-    ]
+    )
 
 
-def test_enabled_adapters_keeps_factlens_unconfigured_without_error() -> None:
-    enabled = enabled_adapters({"datasets": {}})
-
-    assert [adapter.name for adapter in enabled] == ["longmemeval", "hoh", "vitaminc", "rgb"]
+def test_factlens_is_the_only_optional_suite():
+    assert OPTIONAL_SUITES == ("factlens",)
     assert get_adapter("factlens").required is False
 
 
-def test_enabled_adapters_includes_factlens_when_it_has_a_path(tmp_path: Path) -> None:
-    enabled = enabled_adapters({"datasets": {"factlens": {"path": str(tmp_path / "factlens.jsonl")}}})
+def test_every_adapter_declares_a_profile_and_container():
+    for name in (*REQUIRED_SUITES, *OPTIONAL_SUITES):
+        adapter = get_adapter(name)
+        assert adapter.profile
+        assert adapter.container in {"json_array", "jsonl", "csv", "parquet"}
+        assert adapter.evidence_id_origin in {"upstream", "synthesized"}
 
-    assert [adapter.name for adapter in enabled] == ["longmemeval", "hoh", "vitaminc", "rgb", "factlens"]
+
+def test_unknown_suite_fails_clearly():
+    with pytest.raises(ValueError, match="unknown benchmark adapter: rgb"):
+        get_adapter("rgb")
 
 
-def test_registry_rejects_unknown_adapter_name() -> None:
-    with pytest.raises(ValueError, match="unknown benchmark adapter"):
-        get_adapter("unknown")
+def test_factlens_is_enabled_only_when_configured():
+    without = enabled_adapters({"datasets": {}})
+    assert [adapter.name for adapter in without] == list(REQUIRED_SUITES)
+    with_factlens = enabled_adapters(
+        {"datasets": {"factlens": {"path": "benchmarks/fixtures/factlens.csv"}}}
+    )
+    assert "factlens" in [adapter.name for adapter in with_factlens]
