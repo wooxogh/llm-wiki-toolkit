@@ -83,6 +83,24 @@ def test_load_uses_the_profile_normalize_returns(tmp_path):
     assert {case.profile for case in result.cases} == {"claim_decomposition"}
 
 
+def test_build_case_is_the_single_construction_path_load_uses(tmp_path):
+    """`load` and `check_conformance` must build cases identically -- through
+    one shared function -- so a step added to one is never missing from the
+    other. This asserts the provenance injection `build_case` is responsible
+    for lands in the case load actually returns."""
+    from llm_wiki_bench.adapters.base import build_case
+
+    source = _source(tmp_path)
+    record_number = 1
+    record = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
+    case_via_helper = build_case(_Stub(), record, source, record_number, "test")
+    case_via_load = _Stub().load(source, split="test").cases[0]
+
+    assert case_via_helper.id == case_via_load.id == "u1"
+    assert case_via_helper.metadata["source_path"] == case_via_load.metadata["source_path"] == str(source)
+    assert case_via_helper.metadata["source_record"] == case_via_load.metadata["source_record"] == 1
+
+
 def test_load_rejects_an_unregistered_profile_from_normalize(tmp_path):
     class _BadProfile(_Stub):
         def normalize(self, record, path, record_number, split):

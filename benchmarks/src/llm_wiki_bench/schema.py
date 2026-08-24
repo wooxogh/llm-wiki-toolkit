@@ -125,6 +125,30 @@ def validate_case(case: BenchmarkCase) -> None:
     if len(case.fine_evidence_ids) != len(set(case.fine_evidence_ids)):
         raise ValueError("fine_evidence_ids must not contain duplicates")
     _require_declared_capabilities(case)
+    _require_nonblank_label_strings(case)
+
+
+_LABEL_STRING_LIST_KEYS = ("answers", "distractor_answers")
+
+
+def _require_nonblank_label_strings(case: BenchmarkCase) -> None:
+    """Reject a blank gold string so a data hole cannot masquerade as a model failure.
+
+    A blank answer, distractor answer, or slot alias would normalize cleanly
+    and then score as if the model answered wrongly, when the defect is in the
+    source data. Checked at the schema level so every adapter inherits it.
+    """
+    for key in _LABEL_STRING_LIST_KEYS:
+        value = case.labels.get(key)
+        if value is None:
+            continue
+        if any(not isinstance(item, str) or not item.strip() for item in value):
+            raise ValueError(f"case {case.id}: labels.{key} must contain non-blank strings")
+    slots = case.labels.get("answer_slots")
+    if slots is not None:
+        for slot in slots:
+            if any(not isinstance(item, str) or not item.strip() for item in slot):
+                raise ValueError(f"case {case.id}: labels.answer_slots must contain non-blank strings")
 
 
 def _require_declared_capabilities(case: BenchmarkCase) -> None:

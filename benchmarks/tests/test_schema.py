@@ -227,6 +227,44 @@ def test_expects_abstention_must_be_boolean():
         )
 
 
+def test_a_blank_answer_is_rejected_not_scored_as_a_model_failure():
+    with pytest.raises(ValueError, match="case c1: labels.answers must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="rgb_base",
+            split="en",
+            profile="retrieval_qa",
+            prompt="q",
+            labels={"answers": ("",)},
+            evidence_ids=("doc-1",),
+        )
+
+
+def test_a_blank_distractor_answer_is_rejected():
+    with pytest.raises(ValueError, match="case c1: labels.distractor_answers must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="hoh",
+            split="240601_241201",
+            profile="temporal_discrimination",
+            prompt="q",
+            labels={"answers": ("a",), "distractor_answers": ("a", "   ")},
+        )
+
+
+def test_a_blank_alias_inside_an_answer_slot_is_rejected():
+    with pytest.raises(ValueError, match="case c1: labels.answer_slots must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="rgb_integration",
+            split="en_int",
+            profile="multi_slot_retrieval_qa",
+            prompt="q",
+            labels={"answer_slots": (("a", ""), ("b",))},
+            evidence_ids=("doc-1",),
+        )
+
+
 def test_seven_suites_are_registered():
     assert DATASETS == frozenset(
         {

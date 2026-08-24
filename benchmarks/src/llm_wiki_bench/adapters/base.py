@@ -45,26 +45,7 @@ class BenchmarkAdapter(ABC):
         record_count = 0
         for record_number, record in reader(source):
             record_count += 1
-            values = self.normalize(record, source, record_number, split)
-            metadata = dict(values.pop("metadata", {}))
-            metadata.update({"source_path": str(source), "source_record": record_number})
-            if "profile" in values:
-                profile = values.pop("profile")
-                try:
-                    get_profile(profile)
-                except ValueError as error:
-                    raise ValueError(f"{source}: record {record_number}: {error}") from error
-            else:
-                profile = self.profile
-            cases.append(
-                BenchmarkCase(
-                    dataset=self.name,
-                    split=split,
-                    profile=profile,
-                    metadata=metadata,
-                    **values,
-                )
-            )
+            cases.append(build_case(self, record, source, record_number, split))
         return LoadResult(tuple(cases), file_digest(source), record_count)
 
     @abstractmethod
@@ -87,3 +68,38 @@ class BenchmarkAdapter(ABC):
     @staticmethod
     def _metadata(record: dict[str, Any], consumed: set[str]) -> dict[str, Any]:
         return {"source_fields": {key: value for key, value in record.items() if key not in consumed}}
+
+
+def build_case(
+    adapter: BenchmarkAdapter,
+    record: dict[str, Any],
+    source: Path,
+    record_number: int,
+    split: str,
+) -> BenchmarkCase:
+    """Normalize one record into a `BenchmarkCase`, injecting derived provenance.
+
+    The single construction path shared by `BenchmarkAdapter.load` and
+    `runner.check_conformance`, so a step added to one (the blank-string
+    check schema-level validation performs, for instance) can never be
+    missing from the other -- the two must never diverge on how a case gets
+    built from a record.
+    """
+    values = adapter.normalize(record, source, record_number, split)
+    metadata = dict(values.pop("metadata", {}))
+    metadata.update({"source_path": str(source), "source_record": record_number})
+    if "profile" in values:
+        profile = values.pop("profile")
+        try:
+            get_profile(profile)
+        except ValueError as error:
+            raise ValueError(f"{source}: record {record_number}: {error}") from error
+    else:
+        profile = adapter.profile
+    return BenchmarkCase(
+        dataset=adapter.name,
+        split=split,
+        profile=profile,
+        metadata=metadata,
+        **values,
+    )
