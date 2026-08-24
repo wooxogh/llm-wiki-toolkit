@@ -284,23 +284,31 @@ def _prediction_dict(prediction: Prediction) -> dict[str, Any]:
 
 
 def _write_report(run_dir: Path, manifest: dict, per_case: list[dict], metrics: dict) -> None:
-    """Write artifacts, naming the offending case rather than failing inside json.dumps.
+    """Write artifacts, naming what was unserializable rather than failing inside json.dumps.
 
-    Adapters copy raw upstream values into ``metadata['source_fields']`` (and,
-    transitively, into scores and labels) with no type coercion. A ``NaN`` or a
-    numpy/pyarrow scalar reaching ``reports._json`` (``allow_nan=False``)
-    would otherwise crash with a bare, uninformative error from deep inside
-    the standard library. Check each row up front so a bad record fails loudly
-    and points at the case that caused it.
+    Every one of the three JSON payloads can carry a value nobody coerced:
+    ``manifest`` includes config-supplied ``run_parameters`` verbatim (a
+    ``NaN`` such as ``run_parameters: {noise_rate: .nan}`` survives
+    ``yaml.safe_load`` as a Python float), adapters copy raw upstream values
+    into ``metadata['source_fields']`` (and transitively into ``per_case``
+    rows) with no type coercion, and ``metrics`` is runner-computed but
+    checked on the same footing for defense in depth. ``reports._json`` uses
+    ``allow_nan=False`` and would otherwise crash with a bare, unattributed
+    error from deep inside the standard library. Check each payload up front
+    so a bad value fails loudly and names its source.
     """
+    _require_serializable(manifest, "manifest (check configuration values such as run_parameters)")
     for row in per_case:
-        try:
-            json.dumps(row, allow_nan=False)
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"case {row.get('case_id')!r}: result is not JSON-serializable: {error}"
-            ) from error
+        _require_serializable(row, f"case {row.get('case_id')!r} result")
+    _require_serializable(metrics, "metrics")
     write_report(run_dir, manifest, per_case, metrics)
+
+
+def _require_serializable(value: Any, label: str) -> None:
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} is not JSON-serializable: {error}") from error
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
