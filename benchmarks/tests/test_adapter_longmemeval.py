@@ -134,6 +134,39 @@ def test_non_abs_record_stays_memory_qa(tmp_path):
     assert case.expects_abstention is False
 
 
+def test_fine_evidence_turn_index_is_per_session_not_running_index(tmp_path):
+    record = {
+        "question_id": "test_second_session_answer",
+        "question_type": "test",
+        "question": "What happened in the second session?",
+        "answer": "something important",
+        "question_date": "2024/03/01",
+        "haystack_session_ids": ["s1", "s2"],
+        "haystack_dates": ["2024/02/28", "2024/02/29"],
+        "haystack_sessions": [
+            [
+                {"role": "user", "content": "First turn no answer"},
+                {"role": "assistant", "content": "Response without has_answer"},
+            ],
+            [
+                {"role": "user", "content": "Second session first turn"},
+                {"role": "assistant", "content": "This has the answer", "has_answer": True},
+            ],
+        ],
+        "answer_session_ids": ["s2"],
+    }
+    case = LongMemEvalAdapter().load(_write(tmp_path, [record]), split="oracle").cases[0]
+    # Turn is at local index 1 within s2, not global index 3 across flattened context
+    assert case.fine_evidence_ids == ("s2:1",)
+    # Verify context still flattens all sessions in order
+    assert case.context == (
+        "user: First turn no answer",
+        "assistant: Response without has_answer",
+        "user: Second session first turn",
+        "assistant: This has the answer",
+    )
+
+
 def test_the_committed_fixture_matches_the_released_shape(tmp_path):
     from pathlib import Path
 
