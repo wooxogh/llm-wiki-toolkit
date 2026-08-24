@@ -1,4 +1,6 @@
+import csv
 import json
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -49,6 +51,38 @@ def test_read_csv_yields_dict_rows(tmp_path):
     path = tmp_path / "a.csv"
     path.write_text("ind,claim\n0,hello\n", encoding="utf-8")
     assert list(read_csv(path)) == [(1, {"ind": "0", "claim": "hello"})]
+
+
+def test_read_csv_reports_malformed_row(tmp_path, monkeypatch):
+    """Malformed CSV fields should report record number and source."""
+    path = tmp_path / "a.csv"
+    path.write_text("ind,claim\n0,hello\n1,world\n", encoding="utf-8")
+
+    # Mock DictReader to raise csv.Error on the second record
+    original_dictreader = csv.DictReader
+
+    def mock_dictreader(*args, **kwargs):
+        reader = original_dictreader(*args, **kwargs)
+
+        class ErrorOnSecond:
+            def __init__(self, inner):
+                self.inner = inner
+                self.count = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                self.count += 1
+                if self.count == 2:
+                    raise csv.Error("malformed field")
+                return next(self.inner)
+
+        return ErrorOnSecond(reader)
+
+    monkeypatch.setattr("csv.DictReader", mock_dictreader)
+    with pytest.raises(ValueError, match="record 2:"):
+        list(read_csv(path))
 
 
 def test_file_digest_is_stable_and_prefixed(tmp_path):

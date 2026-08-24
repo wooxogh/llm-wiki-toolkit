@@ -49,8 +49,14 @@ def read_csv(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
     """Read a header-bearing CSV into string-valued dicts (FactLens)."""
     source = Path(path)
     with source.open(encoding="utf-8", newline="") as handle:
-        for record_number, row in enumerate(csv.DictReader(handle), start=1):
-            yield record_number, dict(row)
+        reader = csv.DictReader(handle)
+        record_number = 0
+        try:
+            for row in reader:
+                record_number += 1
+                yield record_number, dict(row)
+        except csv.Error as error:
+            raise ValueError(f"{source}: record {record_number + 1}: {error}") from error
 
 
 def read_parquet(path: Path) -> Iterator[tuple[int, dict[str, Any]]]:
