@@ -1,0 +1,1 @@
+{"id":"rgb-1","split":"test","source_version":"rgb-fixture-v1","query":"What was the launch year?","documents":[{"id":"rgb-doc-1","text":"The product launched in 2022."}],"answers":["2022"],"supporting_ids":["rgb-doc-1"]}

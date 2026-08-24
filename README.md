@@ -19,6 +19,12 @@ of re-validating, why the auto-answer policy fails closed, why the evaluation
 harness separates the split it calibrates on from the split it reports on, and
 why a linter flags hedging that carries no measurement.
 
+## External benchmark suite
+
+The offline external-dataset benchmark workspace is documented in
+[benchmarks/README.md](benchmarks/README.md). It ships synthetic fixtures only;
+obtain and configure upstream datasets locally before running a comparison.
+
 ## Quickstart
 
 Everything below except the last block runs with the core install — no GPU, no

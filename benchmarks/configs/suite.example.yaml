@@ -1,0 +1,19 @@
+output_root: benchmarks/results
+top_k: 8
+datasets:
+  longmemeval:
+    path: benchmarks/fixtures/longmemeval.jsonl
+    version: longmemeval-fixture-v1
+  hoh:
+    path: benchmarks/fixtures/hoh.jsonl
+    version: hoh-fixture-v1
+  vitaminc:
+    path: benchmarks/fixtures/vitaminc.jsonl
+    version: vitaminc-fixture-v1
+  rgb:
+    path: benchmarks/fixtures/rgb.jsonl
+    version: rgb-fixture-v1
+  # FactLens is optional: configure it to enable its runner.
+  factlens:
+    path: benchmarks/fixtures/factlens.jsonl
+    version: factlens-fixture-v1
