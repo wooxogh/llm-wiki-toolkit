@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from .adapters import BenchmarkAdapter
+from .adapters import BenchmarkAdapter, build_case
 from .metrics import (
     abstention_summary,
     aggregate,
@@ -29,7 +29,7 @@ from .profiles import get_profile
 from .readers import READERS, file_digest
 from .registry import OPTIONAL_SUITES, REQUIRED_SUITES
 from .reports import write_report
-from .schema import BenchmarkCase, Prediction
+from .schema import Prediction
 
 
 def load_config(path: Path) -> dict:
@@ -163,20 +163,7 @@ def check_conformance(
             continue
         checked += 1
         try:
-            values = adapter.normalize(record, source, record_number, split)
-            metadata = dict(values.pop("metadata", {}))
-            if "profile" in values:
-                profile = values.pop("profile")
-                get_profile(profile)
-            else:
-                profile = adapter.profile
-            BenchmarkCase(
-                dataset=adapter.name,
-                split=split,
-                profile=profile,
-                metadata=metadata,
-                **values,
-            )
+            build_case(adapter, record, source, record_number, split)
         except (TypeError, ValueError) as error:
             failure_count += 1
             if len(failures) < max_reported_failures:
@@ -247,7 +234,7 @@ def run_suite(
         per_case.append(row)
         metric_rows.append(scores)
         observed_profiles[profile.name] += 1
-        if "label" in case.labels:
+        if "label" in profile.capabilities:
             labels.append((case.labels["label"], prediction.label))
 
     counts = {

@@ -242,6 +242,56 @@ def test_run_suite_resolves_a_profile_per_case_over_a_mixed_profile_dataset(tmp_
     assert aggregate["counts"]["fine_recall@1"] < aggregate["n"]
 
 
+def test_a_stray_label_key_under_a_non_label_profile_produces_no_confusion_matrix(tmp_path):
+    """The confusion matrix must be gated on the profile declaring `label`,
+    never on `labels` happening to carry a `"label"` key.
+
+    claim_decomposition declares only `sub_claim_labels`. A case whose
+    `labels` dict carries a stray `"label"` entry anyway (e.g. copy-pasted
+    from a sibling adapter) must not grow a `label_confusion_matrix` with no
+    matching `capabilities_scored` entry.
+    """
+    from llm_wiki_bench.adapters.base import BenchmarkAdapter
+
+    class _StrayLabelAdapter(BenchmarkAdapter):
+        name = "factlens"
+        profile = "claim_decomposition"
+        container = "jsonl"
+        evidence_id_origin = "upstream"
+        required = False
+
+        def normalize(self, record, path, record_number, split):
+            return {
+                "id": str(record["id"]),
+                "prompt": "claim",
+                "labels": {
+                    "sub_claims": ("c1",),
+                    "sub_claim_labels": ("true",),
+                    "label": "entailment",
+                },
+                "metadata": {},
+            }
+
+    source = tmp_path / "records.jsonl"
+    source.write_text(json.dumps({"id": "1"}) + "\n", encoding="utf-8")
+    config = {
+        "output_root": str(tmp_path / "results"),
+        "top_k": 8,
+        "datasets": {
+            "factlens": {"path": str(source), "version": "fixture", "split": "test"}
+        },
+    }
+    predictions = {"1": Prediction(case_id="1", sub_claim_labels=("true",))}
+
+    run_dir = tmp_path / "run"
+    run_suite(_StrayLabelAdapter(), config, predictions, run_dir)
+
+    metrics = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
+    assert "label_confusion_matrix" not in metrics
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "label" not in manifest["capabilities_scored"]
+
+
 def test_run_suite_fails_loudly_on_a_non_serializable_run_parameter(tmp_path):
     """A NaN in config-supplied run_parameters must not crash inside json.dumps unattributed."""
     config = _config(tmp_path, run_parameters={"noise_rate": float("nan")})
