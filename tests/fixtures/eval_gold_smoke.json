@@ -1,0 +1,10 @@
+[
+  {
+    "query": "temporal retrieval and superseded facts",
+    "relevant_document_ids": ["test"]
+  },
+  {
+    "query": "단계적 배포와 롤백 절차",
+    "relevant_document_ids": ["example"]
+  }
+]

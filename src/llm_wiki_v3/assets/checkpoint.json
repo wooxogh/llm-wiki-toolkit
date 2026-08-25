@@ -1,0 +1,29 @@
+{
+  "file": "small_v3_50_normal.pt",
+  "sha256": "2887a57e41ba9c832f4562099b4a824ec68af9dd43c1c782d17acfb5d205b4e8",
+  "bytes": 7399125,
+  "method": "Small-V3-50-Normal",
+  "purpose": "inference-only semantic boundary verification",
+  "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+  "architecture": {
+    "input_dimension": 1024,
+    "model_dimension": 256,
+    "layers": 2,
+    "heads": 4,
+    "feedforward_dimension": 1024,
+    "attention_context_window": 3
+  },
+  "operating_point": {
+    "gate_window_size": 2,
+    "candidate_budget": 0.5,
+    "boundary_keep_threshold": 0.66
+  },
+  "training": {
+    "dataset": "Wiki-727K",
+    "train_documents": 5000,
+    "candidate_count": 112932,
+    "positive_count": 17396,
+    "negative_count": 95536,
+    "selected_epoch": 6
+  }
+}

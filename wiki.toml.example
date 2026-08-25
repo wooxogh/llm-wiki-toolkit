@@ -1,0 +1,24 @@
+[vault]
+root = "."
+
+[v3]
+artifact_dir = ".llm_wiki_v3"
+correction_dir = "_wiki_corrections"
+model_id = "Qwen/Qwen3-Embedding-0.6B"
+embed_device = "auto"
+embedding_batch_size = 32
+# Lower boundary threshold means finer chunks. Higher candidate budget sends
+# more semantic boundaries through Small Attention and costs more inference.
+chunk_boundary_keep_threshold = 0.66
+chunk_candidate_budget = 0.50
+knn_k = 3
+candidate_pool = 50
+rrf_k = 60
+text_weight = 1.0
+dense_weight = 2.0
+tree_weight = 0.8
+knn_weight = 0.8
+auto_answer_cosine = 0.55
+auto_none_cosine = 0.30
+auto_margin = 0.04
+review_similarity = 0.72

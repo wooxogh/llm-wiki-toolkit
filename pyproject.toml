@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-wiki-v3"
+version = "0.1.0"
+description = "Local-first Markdown retrieval with Chunker V3, Tree, and k-NN"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE.md"]
+requires-python = ">=3.11"
+authors = [{ name = "Taeho Woo" }]
+keywords = ["markdown", "retrieval", "knowledge-base", "semantic-search", "rag"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "numpy>=1.24",
+  "pyyaml>=6",
+  "rank-bm25>=0.2.2",
+]
+
+[project.optional-dependencies]
+ml = ["torch>=2.2", "sentence-transformers>=3"]
+dev = ["pytest>=8", "build>=1"]
+
+[project.scripts]
+wiki-embed = "llm_wiki_v3.indexing:main"
+wiki-search = "llm_wiki_v3.search:main"
+wiki-health = "llm_wiki_v3.health:main"
+wiki-eval = "llm_wiki_v3.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+llm_wiki_v3 = [
+  "assets/*.json",
+  "assets/*.pt",
+  "resources/llm-wiki-v3/*.md",
+  "resources/llm-wiki-v3/references/*.md",
+]

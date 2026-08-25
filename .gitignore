@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+.llm_wiki_v3/
+_wiki_corrections/
+sentence_embedding_cache/
