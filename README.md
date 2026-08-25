@@ -5,6 +5,10 @@ It chunks documents with a bundled structural + semantic Chunker V3, then
 combines BM25, Qwen dense retrieval, a directory/heading tree, and a chunk k-NN
 graph. The indexed Markdown directory can live anywhere on the machine.
 
+For a Korean walkthrough from the product-level mental model down to formulas,
+artifacts, invariants, and source modules, see
+[`docs/ARCHITECTURE_KO.md`](docs/ARCHITECTURE_KO.md).
+
 > Status: alpha. Keep source documents under version control and inspect
 > hygiene decisions before applying them.
 
