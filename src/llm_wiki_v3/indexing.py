@@ -16,6 +16,7 @@ import yaml
 from .config import Config, load
 from .hygiene import apply_events, read_events
 from .io import configure_stdio, read_json, read_jsonl, write_json, write_jsonl
+from .pathing import relative_to_root
 from .text import embedding_text, fielded_text, tokenize
 
 
@@ -29,7 +30,7 @@ class Embedder(Protocol):
 
 
 def _relative(path: Path, root: Path) -> str:
-    return path.resolve().relative_to(root.resolve()).as_posix()
+    return relative_to_root(path, root).as_posix()
 
 
 def collect_markdown(config: Config) -> list[Path]:
@@ -37,10 +38,10 @@ def collect_markdown(config: Config) -> list[Path]:
         raise FileNotFoundError(f"vault does not exist: {config.root}")
     paths = []
     for path in config.root.rglob("*.md"):
-        relative_parts = path.resolve().relative_to(config.root).parts
+        relative_parts = relative_to_root(path, config.root).parts
         if any(part in IGNORED_DIRECTORIES for part in relative_parts):
             continue
-        paths.append(path.resolve())
+        paths.append(path)
     return sorted(paths, key=lambda path: _relative(path, config.root))
 
 

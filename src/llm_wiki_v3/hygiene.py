@@ -11,6 +11,7 @@ import yaml
 
 from .config import Config
 from .io import append_jsonl, read_jsonl
+from .pathing import relative_to_root
 
 
 EVENT_TYPES = {"partial_supersede", "error_correction", "dispute"}
@@ -184,7 +185,7 @@ def apply_decision(config: Config, decision: dict[str, Any], chunks: list[dict[s
         if target.exists():
             raise FileExistsError(f"correction source already exists: {target}")
         old = next(chunk for chunk in chunks if chunk["id"] == event["old_chunk_id"])
-        relative_target = target.resolve().relative_to(config.root).as_posix()
+        relative_target = relative_to_root(target, config.root).as_posix()
         is_error = event["type"] == "error_correction"
         frontmatter = {
             "llm_wiki_v3_kind": "correction" if is_error else "supersede_resolution",

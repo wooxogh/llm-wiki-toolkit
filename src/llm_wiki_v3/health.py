@@ -15,6 +15,7 @@ from .hygiene import apply_decision, apply_events, read_events
 from .indexing import build, collect_markdown
 from .io import configure_stdio, read_json, read_jsonl
 from .models import HealthIssue
+from .pathing import relative_to_root
 
 
 def _issue(severity: str, code: str, detail: str) -> HealthIssue:
@@ -44,7 +45,7 @@ def inspect(config: Config) -> list[HealthIssue]:
 
     current_hashes = {}
     for path in collect_markdown(config):
-        relative = path.resolve().relative_to(config.root).as_posix()
+        relative = relative_to_root(path, config.root).as_posix()
         current_hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
     if current_hashes != manifest.get("documents", {}):
         issues.append(_issue("error", "index-stale", "Markdown files changed since wiki-embed"))

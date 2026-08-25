@@ -6,8 +6,10 @@ import tempfile
 import unittest
 from importlib.resources import files
 from pathlib import Path
+from unittest.mock import patch
 
 from llm_wiki_v3.chunking.config import DEFAULT_CHECKPOINT
+from llm_wiki_v3.pathing import relative_to_root
 from llm_wiki_v3.skill_install import install
 
 
@@ -43,6 +45,12 @@ class StandalonePackageTests(unittest.TestCase):
         )
         self.assertNotIn("from chunk_model", source)
         self.assertNotIn("embedding_test", source)
+
+    def test_vault_relative_path_prefers_lexical_windows_spelling(self) -> None:
+        root = Path("C:/Users/RUNNER~1/AppData/Local/Temp/example")
+        source = root / "nested" / "doc.md"
+        with patch.object(Path, "resolve", side_effect=AssertionError("resolve is fallback only")):
+            self.assertEqual(relative_to_root(source, root), Path("nested/doc.md"))
 
 
 if __name__ == "__main__":
