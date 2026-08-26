@@ -1,10 +1,12 @@
 """Source-specific benchmark adapters."""
 
-from .base import BenchmarkAdapter
+from .base import BenchmarkAdapter, build_case
 from .factlens import FactLensAdapter
 from .hoh import HoHAdapter
 from .longmemeval import LongMemEvalAdapter
-from .rgb import RGBAdapter
+from .rgb_base import RGBBaseAdapter
+from .rgb_counterfactual import RGBCounterfactualAdapter
+from .rgb_integration import RGBIntegrationAdapter
 from .vitaminc import VitaminCAdapter
 
 __all__ = [
@@ -12,6 +14,9 @@ __all__ = [
     "FactLensAdapter",
     "HoHAdapter",
     "LongMemEvalAdapter",
-    "RGBAdapter",
+    "RGBBaseAdapter",
+    "RGBCounterfactualAdapter",
+    "RGBIntegrationAdapter",
     "VitaminCAdapter",
+    "build_case",
 ]

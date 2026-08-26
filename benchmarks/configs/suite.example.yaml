@@ -1,19 +1,45 @@
 output_root: benchmarks/results
 top_k: 8
+
 datasets:
   longmemeval:
-    path: benchmarks/fixtures/longmemeval.jsonl
-    version: longmemeval-fixture-v1
+    path: benchmarks/data/longmemeval_oracle.json
+    version: longmemeval-cleaned-oracle
+    split: oracle
+
+  # HoH's split name is all digits with an underscore separating two dates.
+  # YAML 1.1 treats underscores in an unquoted scalar as digit separators, so
+  # 240601_241201 unquoted parses as the integer 240601241201, not a string,
+  # and the run fails. Keep the quotes.
   hoh:
-    path: benchmarks/fixtures/hoh.jsonl
-    version: hoh-fixture-v1
+    path: benchmarks/data/hoh_qas_240601_241201.parquet
+    version: hoh-qas-240601-241201
+    split: "240601_241201"
+
   vitaminc:
-    path: benchmarks/fixtures/vitaminc.jsonl
-    version: vitaminc-fixture-v1
-  rgb:
-    path: benchmarks/fixtures/rgb.jsonl
-    version: rgb-fixture-v1
-  # FactLens is optional: configure it to enable its runner.
+    path: benchmarks/data/vitaminc_test.jsonl
+    version: vitaminc-test
+    split: test
+
+  rgb_base:
+    path: benchmarks/data/en_refine.json
+    version: rgb-en-refine
+    split: en_refine
+    run_parameters:
+      noise_rate: 0.6
+      passage_num: 5
+
+  rgb_integration:
+    path: benchmarks/data/en_int.json
+    version: rgb-en-int
+    split: en_int
+
+  rgb_counterfactual:
+    path: benchmarks/data/en_fact.json
+    version: rgb-en-fact
+    split: en_fact
+
   factlens:
-    path: benchmarks/fixtures/factlens.jsonl
-    version: factlens-fixture-v1
+    path: benchmarks/data/fact_lens_benchmark.csv
+    version: factlens-benchmark
+    split: benchmark

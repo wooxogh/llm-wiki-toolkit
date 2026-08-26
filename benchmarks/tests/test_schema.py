@@ -1,6 +1,7 @@
 import pytest
 
 from llm_wiki_bench.schema import (
+    DATASETS,
     BenchmarkCase,
     Prediction,
     validate_case,
@@ -13,9 +14,9 @@ def test_valid_answerable_case_and_prediction_validate() -> None:
         id="case-1",
         dataset="factlens",
         split="test",
-        task="answer",
+        profile="retrieval_qa",
         prompt="What does the evidence establish?",
-        labels={"answer": "A supported claim"},
+        labels={"answers": ("A supported claim",)},
         context=["Evidence passage"],
         evidence_ids=["doc-1"],
         metadata={"source": "fixture"},
@@ -36,6 +37,7 @@ def test_valid_answerable_case_and_prediction_validate() -> None:
 
 def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
     labels = {
+        "label": "entailment",
         "answer": "A supported claim",
         "nested": {"key": "value"},
         "items": ["item-1"],
@@ -46,7 +48,7 @@ def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
         id="case-1",
         dataset="factlens",
         split="test",
-        task="answer",
+        profile="grounded_verification",
         prompt="What does the evidence establish?",
         labels=labels,
         metadata=metadata,
@@ -56,6 +58,7 @@ def test_case_copies_and_immutably_exposes_mapping_inputs() -> None:
     metadata["source"] = "Mutated caller value"
 
     assert case.labels == {
+        "label": "entailment",
         "answer": "A supported claim",
         "nested": {"key": "value"},
         "items": ("item-1",),
@@ -80,9 +83,9 @@ def test_invalid_case_identity_dataset_or_prompt_is_rejected(case_kwargs: dict) 
         "id": "case-1",
         "dataset": "factlens",
         "split": "test",
-        "task": "answer",
+        "profile": "grounded_verification",
         "prompt": "What does the evidence establish?",
-        "labels": {"answer": "A supported claim"},
+        "labels": {"label": "entailment"},
     }
     values.update(case_kwargs)
 
@@ -99,9 +102,9 @@ def test_invalid_case_container_inputs_raise_value_error(case_kwargs: dict) -> N
         "id": "case-1",
         "dataset": "factlens",
         "split": "test",
-        "task": "answer",
+        "profile": "grounded_verification",
         "prompt": "What does the evidence establish?",
-        "labels": {"answer": "A supported claim"},
+        "labels": {"label": "entailment"},
     }
     values.update(case_kwargs)
 
@@ -115,9 +118,9 @@ def test_duplicate_case_evidence_ids_are_rejected() -> None:
             id="case-1",
             dataset="factlens",
             split="test",
-            task="answer",
+            profile="retrieval_qa",
             prompt="What does the evidence establish?",
-            labels={"answer": "A supported claim"},
+            labels={"answers": ("A supported claim",)},
             evidence_ids=["doc-1", "doc-1"],
         )
 
@@ -135,3 +138,142 @@ def test_non_numeric_prediction_latency_is_rejected() -> None:
 def test_abstained_prediction_carrying_answer_is_rejected() -> None:
     with pytest.raises(ValueError):
         Prediction(case_id="case-1", answer="An answer", abstained=True)
+
+
+def test_case_requires_a_known_profile():
+    with pytest.raises(ValueError, match="unknown profile: nope"):
+        BenchmarkCase(
+            id="c1",
+            dataset="vitaminc",
+            split="test",
+            profile="nope",
+            prompt="claim",
+            labels={"label": "entailment"},
+        )
+
+
+def test_declared_capability_without_data_is_an_error_not_a_silent_skip():
+    """grounded_verification declares `label`; omitting it must fail."""
+    with pytest.raises(ValueError, match="grounded_verification requires labels.label"):
+        BenchmarkCase(
+            id="c1",
+            dataset="vitaminc",
+            split="test",
+            profile="grounded_verification",
+            prompt="claim",
+            labels={},
+        )
+
+
+def test_retrieval_profile_requires_non_empty_evidence_ids():
+    with pytest.raises(ValueError, match="retrieval_qa requires evidence_ids"):
+        BenchmarkCase(
+            id="c1",
+            dataset="rgb_base",
+            split="en",
+            profile="retrieval_qa",
+            prompt="q",
+            labels={"answers": ("a",)},
+            evidence_ids=(),
+        )
+
+
+def test_memory_qa_case_accepts_two_evidence_granularities():
+    case = BenchmarkCase(
+        id="q1",
+        dataset="longmemeval",
+        split="oracle",
+        profile="memory_qa",
+        prompt="where is the key?",
+        labels={"answers": ("the blue vase",)},
+        evidence_ids=("s1",),
+        fine_evidence_ids=("s1:2",),
+        expects_abstention=False,
+    )
+    assert case.fine_evidence_ids == ("s1:2",)
+    assert case.expects_abstention is False
+
+
+def test_case_no_longer_accepts_a_task_field():
+    with pytest.raises(TypeError):
+        BenchmarkCase(
+            id="c1",
+            dataset="vitaminc",
+            split="test",
+            profile="grounded_verification",
+            task="verification",
+            prompt="claim",
+            labels={"label": "entailment"},
+        )
+
+
+def test_prediction_carries_sub_claim_labels():
+    prediction = Prediction(case_id="c1", sub_claim_labels=("true", "false"))
+    assert prediction.sub_claim_labels == ("true", "false")
+
+
+def test_expects_abstention_must_be_boolean():
+    with pytest.raises(ValueError, match="expects_abstention must be a boolean"):
+        BenchmarkCase(
+            id="q1",
+            dataset="longmemeval",
+            split="oracle",
+            profile="memory_qa",
+            prompt="q",
+            labels={"answers": ("a",)},
+            evidence_ids=("s1",),
+            fine_evidence_ids=("s1:0",),
+            expects_abstention="yes",
+        )
+
+
+def test_a_blank_answer_is_rejected_not_scored_as_a_model_failure():
+    with pytest.raises(ValueError, match="case c1: labels.answers must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="rgb_base",
+            split="en",
+            profile="retrieval_qa",
+            prompt="q",
+            labels={"answers": ("",)},
+            evidence_ids=("doc-1",),
+        )
+
+
+def test_a_blank_distractor_answer_is_rejected():
+    with pytest.raises(ValueError, match="case c1: labels.distractor_answers must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="hoh",
+            split="240601_241201",
+            profile="temporal_discrimination",
+            prompt="q",
+            labels={"answers": ("a",), "distractor_answers": ("a", "   ")},
+        )
+
+
+def test_a_blank_alias_inside_an_answer_slot_is_rejected():
+    with pytest.raises(ValueError, match="case c1: labels.answer_slots must contain non-blank strings"):
+        BenchmarkCase(
+            id="c1",
+            dataset="rgb_integration",
+            split="en_int",
+            profile="multi_slot_retrieval_qa",
+            prompt="q",
+            labels={"answer_slots": (("a", ""), ("b",))},
+            evidence_ids=("doc-1",),
+        )
+
+
+def test_seven_suites_are_registered():
+    assert DATASETS == frozenset(
+        {
+            "longmemeval",
+            "hoh",
+            "vitaminc",
+            "factlens",
+            "rgb_base",
+            "rgb_integration",
+            "rgb_counterfactual",
+        }
+    )

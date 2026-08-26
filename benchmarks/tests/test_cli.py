@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 
@@ -18,17 +19,79 @@ def _cli_environment() -> dict[str, str]:
     return environment
 
 
-def _write_config(tmp_path: Path) -> Path:
+_HOH_RECORD = {
+    "question": "Which yeast ferments gluconolactone?",
+    "answer": "Maudiozyma bulderi",
+    "last_modified_time": "2024-07-01T00:00:00",
+    "evidence": 'The yeast "Maudiozyma bulderi" ferments gluconolactone.',
+    "outdated_infos": [
+        {"answer": "Saccharomyces bulderi", "evidence": 'The yeast "Saccharomyces bulderi" ferments gluconolactone.'}
+    ],
+    "document": {"id": "1000005", "title": "Glucono delta-lactone"},
+}
+
+
+def _write_hoh_fixture(tmp_path: Path) -> Path:
+    pytest.importorskip("pyarrow", reason="HoH needs the optional 'hoh' extra")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path = tmp_path / "hoh.parquet"
+    pq.write_table(pa.Table.from_pylist([_HOH_RECORD]), str(path))
+    return path
+
+
+def _build_config(tmp_path: Path) -> dict:
+    """Build a config from the tracked fixtures for every required suite.
+
+    Every required suite must be present because both `validate` and `run`
+    validate the whole config before dispatching (a config that leaves the
+    other required suites unconfigured is not something `validate_config`
+    will accept), so this constructs a complete, real config rather than a
+    single-suite one.
+    """
     config = {
         "output_root": str(tmp_path / "results"),
         "top_k": 8,
         "datasets": {
-            name: {"path": str(FIXTURES / f"{name}.jsonl"), "version": f"{name}-v1"}
-            for name in ("longmemeval", "hoh", "vitaminc", "rgb")
+            "longmemeval": {
+                "path": str(FIXTURES / "longmemeval.json"),
+                "version": "longmemeval-fixture",
+                "split": "test",
+            },
+            "hoh": {
+                "path": str(_write_hoh_fixture(tmp_path)),
+                "version": "hoh-fixture",
+                "split": "240601_241201",
+            },
+            "vitaminc": {
+                "path": str(FIXTURES / "vitaminc.jsonl"),
+                "version": "vitaminc-fixture",
+                "split": "test",
+            },
+            "rgb_base": {
+                "path": str(FIXTURES / "rgb_base.jsonl"),
+                "version": "rgb-fixture",
+                "split": "test",
+            },
+            "rgb_integration": {
+                "path": str(FIXTURES / "rgb_integration.jsonl"),
+                "version": "rgb-fixture",
+                "split": "test",
+            },
+            "rgb_counterfactual": {
+                "path": str(FIXTURES / "rgb_counterfactual.jsonl"),
+                "version": "rgb-fixture",
+                "split": "test",
+            },
         },
     }
+    return config
+
+
+def _write_config(tmp_path: Path) -> Path:
     path = tmp_path / "suite.yaml"
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    path.write_text(yaml.safe_dump(_build_config(tmp_path)), encoding="utf-8")
     return path
 
 
@@ -45,13 +108,13 @@ def test_validate_exits_zero_without_loading_predictions_or_models(tmp_path: Pat
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "valid"
+    assert result.stdout.strip().splitlines()[-1] == "valid"
 
 
 def test_run_prints_timestamped_artifact_directory_after_writing(tmp_path: Path) -> None:
     config = _write_config(tmp_path)
     predictions = tmp_path / "predictions.jsonl"
-    predictions.write_text(json.dumps({"case_id": "hoh-1", "answer": "Larkspur"}) + "\n", encoding="utf-8")
+    predictions.write_text(json.dumps({"case_id": "1000005:1", "answer": "Maudiozyma bulderi"}) + "\n", encoding="utf-8")
 
     result = subprocess.run(
         [sys.executable, "-m", "llm_wiki_bench", "run", "--config", str(config), "--suite", "hoh", "--predictions", str(predictions)],
@@ -69,17 +132,20 @@ def test_run_prints_timestamped_artifact_directory_after_writing(tmp_path: Path)
     assert (run_dir / "manifest.json").is_file()
 
 
-def test_example_config_validates_against_tracked_fixtures(tmp_path: Path) -> None:
-    """Catch a shipped example that cannot validate without upstream data."""
-    config = yaml.safe_load((BENCHMARKS / "configs" / "suite.example.yaml").read_text(encoding="utf-8"))
-    config["output_root"] = str(tmp_path / "results")
-    for name, details in config["datasets"].items():
-        details["path"] = str(FIXTURES / f"{name}.jsonl")
-    path = tmp_path / "suite.example.fixture-paths.yaml"
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+def test_shipped_example_config_is_correctly_rejected_without_downloaded_data(tmp_path: Path) -> None:
+    """`validate` failing on the shipped example is the fix working, not a regression.
 
+    `benchmarks/configs/suite.example.yaml` (Task 16's rewrite: real suite
+    names, real `path`/`version`/`split` values, the `hoh` split quoted) points
+    at real, unfetched dataset paths the repository deliberately does not
+    carry. This test runs `validate` against the file exactly as shipped (not
+    a copy, not a substitute config) and asserts it is rejected, naming every
+    configured suite's missing path, so this task's headline claim -- that
+    `validate` now genuinely opens and checks data rather than rubber-stamping
+    any config -- is exercised, not just asserted in prose.
+    """
     result = subprocess.run(
-        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(path)],
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", "configs/suite.example.yaml"],
         text=True,
         capture_output=True,
         check=False,
@@ -87,8 +153,73 @@ def test_example_config_validates_against_tracked_fixtures(tmp_path: Path) -> No
         env=_cli_environment(),
     )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "valid"
+    assert result.returncode != 0
+    for suite in (
+        "longmemeval",
+        "hoh",
+        "vitaminc",
+        "rgb_base",
+        "rgb_integration",
+        "rgb_counterfactual",
+        "factlens",
+    ):
+        assert f"datasets.{suite}.path does not exist" in result.stderr
+
+
+def test_validate_fails_with_a_record_level_message_when_a_configured_source_is_malformed(tmp_path: Path) -> None:
+    """A source file that exists but contains an unnormalizable record must
+    fail `validate` with the record-level message, not pass because the
+    path merely exists."""
+    config = _build_config(tmp_path)
+    bad_source = tmp_path / "vitaminc_malformed.jsonl"
+    bad_source.write_text(
+        json.dumps({"unique_id": "u1", "claim": "c", "evidence": "e", "label": "NOT_ENOUGH_INFO"}) + "\n",
+        encoding="utf-8",
+    )
+    config["datasets"]["vitaminc"]["path"] = str(bad_source)
+    config_path = tmp_path / "suite.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(config_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+        cwd=BENCHMARKS,
+        env=_cli_environment(),
+    )
+
+    assert result.returncode != 0
+    assert "vitaminc" in result.stderr
+    assert "record 1" in result.stderr
+
+
+def test_validate_reports_the_omitted_count_when_sample_exceeds_the_failure_cap(tmp_path: Path) -> None:
+    """`--sample` above `check_conformance`'s 20-failure cap must not silently
+    truncate: a sample with more than 20 failures must say how many were
+    dropped, the same way `conformance` does."""
+    config = _build_config(tmp_path)
+    bad_source = tmp_path / "vitaminc_all_bad.jsonl"
+    bad_records = [
+        {"unique_id": f"u{i}", "claim": "c", "evidence": "e", "label": "NOT_ENOUGH_INFO"} for i in range(1, 31)
+    ]
+    bad_source.write_text("".join(json.dumps(record) + "\n" for record in bad_records), encoding="utf-8")
+    config["datasets"]["vitaminc"]["path"] = str(bad_source)
+    config_path = tmp_path / "suite.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "llm_wiki_bench", "validate", "--config", str(config_path), "--sample", "50"],
+        text=True,
+        capture_output=True,
+        check=False,
+        cwd=BENCHMARKS,
+        env=_cli_environment(),
+    )
+
+    assert result.returncode != 0
+    assert "vitaminc" in result.stderr
+    assert "... and 10 more" in result.stderr
 
 
 def test_runtime_paths_are_ignored_without_ignoring_examples_or_markers() -> None:
@@ -102,7 +233,8 @@ def test_runtime_paths_are_ignored_without_ignoring_examples_or_markers() -> Non
     assert "benchmarks/configs/*.local.yaml" in patterns
     assert (BENCHMARKS / "data" / ".gitkeep").is_file()
     assert (BENCHMARKS / "results" / ".gitkeep").is_file()
-    for tracked in (BENCHMARKS / "fixtures" / "hoh.jsonl", BENCHMARKS / "configs" / "suite.example.yaml"):
+    tracked_paths = tuple(FIXTURES.iterdir()) + (BENCHMARKS / "configs" / "suite.example.yaml",)
+    for tracked in tracked_paths:
         relative_path = str(tracked.relative_to(REPOSITORY))
         result = subprocess.run(
             ["git", "check-ignore", "-q", "--", relative_path],

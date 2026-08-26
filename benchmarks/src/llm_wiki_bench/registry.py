@@ -1,16 +1,43 @@
-"""Named benchmark adapter discovery."""
+"""Named benchmark adapter discovery.
+
+The registry is the single source of truth for which suites exist; the runner
+no longer keeps its own list.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-from .adapters import BenchmarkAdapter, FactLensAdapter, HoHAdapter, LongMemEvalAdapter, RGBAdapter, VitaminCAdapter
-
+from .adapters import (
+    BenchmarkAdapter,
+    FactLensAdapter,
+    HoHAdapter,
+    LongMemEvalAdapter,
+    RGBBaseAdapter,
+    RGBCounterfactualAdapter,
+    RGBIntegrationAdapter,
+    VitaminCAdapter,
+)
 
 _ADAPTERS: dict[str, BenchmarkAdapter] = {
     adapter.name: adapter
-    for adapter in (LongMemEvalAdapter(), HoHAdapter(), VitaminCAdapter(), RGBAdapter(), FactLensAdapter())
+    for adapter in (
+        LongMemEvalAdapter(),
+        HoHAdapter(),
+        VitaminCAdapter(),
+        RGBBaseAdapter(),
+        RGBIntegrationAdapter(),
+        RGBCounterfactualAdapter(),
+        FactLensAdapter(),
+    )
 }
+
+REQUIRED_SUITES: tuple[str, ...] = tuple(
+    sorted(name for name, adapter in _ADAPTERS.items() if adapter.required)
+)
+OPTIONAL_SUITES: tuple[str, ...] = tuple(
+    sorted(name for name, adapter in _ADAPTERS.items() if not adapter.required)
+)
 
 
 def get_adapter(name: str) -> BenchmarkAdapter:
@@ -22,10 +49,13 @@ def get_adapter(name: str) -> BenchmarkAdapter:
 
 
 def enabled_adapters(config: dict[str, Any]) -> list[BenchmarkAdapter]:
-    """Return required suites plus FactLens only when it has a configured path."""
-    adapters = [adapter for adapter in _ADAPTERS.values() if adapter.required]
+    """Return required suites plus each optional suite that has a configured path."""
+    adapters = [get_adapter(name) for name in REQUIRED_SUITES]
     datasets = config.get("datasets", {})
-    factlens = datasets.get("factlens", {}) if isinstance(datasets, dict) else {}
-    if isinstance(factlens, dict) and factlens.get("path"):
-        adapters.append(get_adapter("factlens"))
+    if not isinstance(datasets, dict):
+        return adapters
+    for name in OPTIONAL_SUITES:
+        details = datasets.get(name, {})
+        if isinstance(details, dict) and details.get("path"):
+            adapters.append(get_adapter(name))
     return adapters

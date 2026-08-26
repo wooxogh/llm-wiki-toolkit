@@ -1,1 +1,0 @@
-{"id":"hoh-1","split":"test","source_version":"hoh-fixture-v1","question":"Which city hosts the university founded by Ada's mentor?","passages":[{"id":"hop-1","text":"Ada's mentor founded Northbridge University."},{"id":"hop-2","text":"Northbridge University is in Larkspur."}],"answers":["Larkspur"],"evidence_ids":["hop-1","hop-2"]}
