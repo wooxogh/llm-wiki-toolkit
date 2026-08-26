@@ -662,12 +662,11 @@ Dense를 중심으로 사용하되 정확한 단어와 문서 구조, 의미 이
 Reranker 로딩이나 inference가 실패하면 기본 검색 결과를 유지하고
 `reranked=false`를 반환한다. 검색 자체를 실패시키지 않는 graceful fallback이다.
 
-### 10.7 `--auto`의 의미
+### 10.7 `--auto` 검색 confidence와 사실 판단
 
-`--auto`는 답변을 생성하지 않는다. 검색 결과가 바로 답변에 사용될 만큼 분명한지
-`answer`, `review`, `none` 중 하나로 분류한다. 내부적으로 rerank pool 10을 요청한다.
-
-판정 순서는 다음과 같다.
+`wiki-search --auto`는 답변을 생성하지 않는다. 검색 결과가 retrieval 관점에서 바로
+사용될 만큼 분명한지 `answer`, `review`, `none`으로 분류한다. 내부적으로 rerank pool
+10을 요청한다.
 
 ```text
 검색 결과 없음                      -> none
@@ -679,7 +678,11 @@ top dense - second dense < 0.04     -> review
 그 외                               -> answer
 ```
 
-이는 검색 confidence heuristic이지 답의 사실성을 증명하는 장치가 아니다.
+이는 retrieval confidence heuristic이다. 어느 주장이 맞는지 또는 문서들이 서로
+모순되는지는 결정하지 않는다. Codex/Claude skill은 반환된 chunk, 연결된 hygiene
+evidence, 그리고 health review 후보를 읽어 주장·범위·버전·시점을 비교한다. 모순 또는
+오류 가능성이 있으면 사용자에게 확인 질문을 하고, 사용자의 명시적 답변 뒤에만
+correction/dispute metadata를 적용한다.
 
 ### 10.8 `--range N`
 
@@ -840,9 +843,6 @@ Query embedding은 variant마다 반복하지 않고 한 번 계산해 cache한�
 | `dense_weight` | 2.0 | Dense 채널 가중치 |
 | `tree_weight` | 0.8 | Tree 채널 가중치 |
 | `knn_weight` | 0.8 | k-NN 채널 가중치 |
-| `auto_answer_cosine` | 0.55 | auto answer 최소 dense 점수 |
-| `auto_none_cosine` | 0.30 | auto none 상한 |
-| `auto_margin` | 0.04 | top-2 분리 기준 |
 | `review_similarity` | 0.72 | health review pair 최소 cosine |
 
 가중치와 threshold는 모델의 보편적 진리가 아니라 현재 operating point다. 공개

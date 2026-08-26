@@ -11,21 +11,47 @@ user's decision.
 
 ## Search
 
-Run `wiki-search "<question>" --auto --json`. Read every returned chunk's
+Run `wiki-search "<question>" --json`. Read every returned chunk's
 `related_evidence`, especially `SUPERSEDED_BY` and `DISPUTED_WITH` records.
 
-- `answer`: use the returned evidence with source attribution.
-- `review`: inspect the listed evidence and explain the uncertainty.
-- `none`: do not invent a wiki answer.
+Run `wiki-search "<question>" --json --rerank` for more accurate search.
 
-Use `--range N` only when the user asks for recent material. Use `--rerank` for
-high-value or ambiguous searches when `--auto` is not already active.
+Use `--range N` only when the user asks for recent material.
+
+### Mandatory evidence and fact-check gate
+
+The CLI `decision` and search scores are retrieval signals only. They never
+authorize the host LLM to skip evidence review or to decide which claim is
+true.
+
+For every wiki-backed response with retrieved chunks, before answering:
+
+1. Read every returned chunk and its `related_evidence`; do not rely only on
+   the top-ranked chunk.
+2. If sequential information related to the chunk is needed, refer previous/next chunk by `previous_chunk_id` or `next_chunk_id`.
+3. Run `wiki-health review --vault <vault> --json` once. Read every candidate
+   pair relevant to the retrieved chunks, their source documents, or the query.
+4. Compare exact claims, scope, version, environment, dates, and timestamps.
+
+If this review reveals a possible contradiction, an apparently incorrect
+claim, or missing information that could change the answer, do not choose a
+winner and do not give a definitive answer. Ask the user a concise, explicit
+fact-check question. Quote or identify both claims, explain why they conflict,
+and ask which statement, scope, version, or correction should govern.
+
+The host LLM must ask this question even when `wiki-search --auto` returned
+`answer`. It may say that the evidence is insufficient when no chunks are
+retrieved, but it must not invent a conclusion. A potential conflict is not a
+proof of error: only the user confirms the final correction, dispute, or
+supersession. And the host LLM should necessarily update the corrected information by `wiki-health apply`.
 
 ## Hygiene
 
 Semantic similarity is only a comparison candidate. It does not prove a
 contradiction or an error. Compare exact claims, scope, version, environment,
-and timestamps before asking the user.
+and timestamps before asking the user. The mandatory evidence and fact-check
+gate above requires that question whenever a possible conflict or error is
+found.
 
 Never apply a hygiene decision until the user has explicitly answered. Then
 create a decision JSON matching [references/decisions.md](references/decisions.md)
@@ -44,6 +70,5 @@ Do not rewrite the original Markdown for an error correction.
 ## Maintenance
 
 Run `wiki-embed` after source documents change. Run `wiki-health` after every
-rebuild or hygiene action. Use `wiki-eval` only with a maintained gold file;
+rebuild or hygiene action if needed. Use `wiki-eval` only with a maintained gold file;
 do not tune thresholds on test results.
-

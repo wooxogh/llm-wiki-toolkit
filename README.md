@@ -41,6 +41,42 @@ python -m pytest
 On Windows, use `python -m llm_wiki_v3.indexing` if the Python `Scripts`
 directory containing `wiki-embed.exe` is not on `PATH`.
 
+## Hugging Face authentication and model cache
+
+The Qwen embedding model is public, so a Hugging Face token is not required.
+If Hugging Face prints an unauthenticated-request warning or asks for login,
+authenticate once in the same Python installation used for the `wiki-*`
+commands:
+
+```powershell
+python -m pip install -U huggingface_hub
+hf auth login
+hf auth whoami
+```
+
+`hf auth login` stores the credential in the user-level Hugging Face cache.
+The token is not saved in the vault, `wiki.toml`, or this repository, and the
+subsequent `wiki-embed` and `wiki-search` processes reuse that stored
+credential automatically. Do not paste the token into chat, source files, or
+the vault.
+
+Model weights are cached separately from credentials. The first command may
+download the model; later commands create a new in-process model object for
+their own query/indexing work, but should reuse the local model files instead
+of downloading them again.
+
+After the model has downloaded successfully, an offline session can prevent
+all Hugging Face network checks:
+
+```powershell
+$env:HF_HUB_OFFLINE = "1"
+wiki-search "your question" --vault C:\path\to\markdown
+```
+
+Only enable offline mode after the required model files are present locally.
+Unset it with `Remove-Item Env:HF_HUB_OFFLINE` when downloading or updating a
+model.
+
 ## Configure a vault
 
 Copy `wiki.toml.example` to `wiki.toml` inside any Markdown directory. Run the
@@ -68,7 +104,7 @@ shows otherwise.
 
 ```bash
 wiki-embed --vault /path/to/markdown
-wiki-search "how is retry handled?" --vault /path/to/markdown --auto
+wiki-search "how is retry handled?" --vault /path/to/markdown --auto --json
 wiki-search "recent migration decisions" --vault /path/to/markdown --range 2 --rerank
 wiki-health --vault /path/to/markdown
 wiki-eval --vault /path/to/markdown --gold eval_gold_v3.json
@@ -77,7 +113,9 @@ wiki-eval --vault /path/to/markdown --gold eval_gold_v3.json
 - `wiki-embed` incrementally builds chunks, vectors, BM25 data, tree nodes, and
   k-NN links under `.llm_wiki_v3/`.
 - `wiki-search` fuses text, dense, tree, and k-NN evidence with weighted RRF.
-  `--auto` reports answer/review/none confidence; `--range N` limits source age.
+  `--auto` reports answer/review/none retrieval confidence; `--range N` limits
+  source age. The host LLM assesses evidence rather than treating this as a
+  factual decision.
 - `wiki-health` checks artifact and provenance integrity. Its `review` command
   only prepares evidence for an agent and user; it does not decide truth.
 - `wiki-eval` runs retrieval ablations against a maintained gold query file.

@@ -10,7 +10,8 @@ import numpy as np
 
 from llm_wiki_v3.config import Config
 from llm_wiki_v3.io import write_json, write_jsonl
-from llm_wiki_v3.search import SearchEngine
+from llm_wiki_v3.models import SearchHit
+from llm_wiki_v3.search import SearchEngine, SearchResponse, _auto_decision
 
 
 class FakeEmbedder:
@@ -92,6 +93,30 @@ class SearchTests(unittest.TestCase):
         self.assertTrue(response.reranked)
         self.assertEqual(response.hits[0].chunk["id"], "new")
         self.assertEqual(response.hits[0].rerank_score, 0.9)
+
+    def test_auto_decision_uses_retrieval_confidence_not_truth(self):
+        response = SearchResponse(
+            (
+                SearchHit({"id": "first"}, 0.8, channel_scores={"dense": 0.90}),
+                SearchHit({"id": "second"}, 0.7, channel_scores={"dense": 0.80}),
+            ),
+            reranked=True,
+        )
+        self.assertEqual(_auto_decision(response, self.config), ("answer", "clear-margin"))
+
+    def test_auto_decision_reviews_linked_hygiene_evidence(self):
+        response = SearchResponse(
+            (
+                SearchHit(
+                    {"id": "first"},
+                    0.8,
+                    channel_scores={"dense": 0.90},
+                    related_evidence=[{"relation": "SUPERSEDED_BY"}],
+                ),
+            ),
+            reranked=True,
+        )
+        self.assertEqual(_auto_decision(response, self.config), ("review", "related-hygiene-evidence"))
 
 
 if __name__ == "__main__":
