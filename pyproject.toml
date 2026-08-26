@@ -33,3 +33,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 llm_wiki = ["evaluation/auto_thresholds.json", "hygiene/claim_lint/patterns/*.toml"]
+
+[tool.pytest.ini_options]
+pythonpath = ["benchmarks/src"]
+testpaths = ["tests", "benchmarks/tests"]
