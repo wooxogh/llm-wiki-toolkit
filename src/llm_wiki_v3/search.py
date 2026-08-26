@@ -27,14 +27,9 @@ class QueryEmbedder(Protocol):
     def encode_query(self, query: str) -> np.ndarray: ...
 
 
-class Reranker(Protocol):
-    def score(self, query: str, texts: list[str]) -> list[float]: ...
-
-
 @dataclass(frozen=True)
 class SearchResponse:
     hits: tuple[SearchHit, ...]
-    reranked: bool
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -100,7 +95,6 @@ class SearchEngine:
         config: Config,
         *,
         embedder: QueryEmbedder | None = None,
-        reranker: Reranker | None = None,
         now: datetime | None = None,
     ) -> None:
         self.config = config
@@ -141,7 +135,6 @@ class SearchEngine:
                 batch_size=config.embedding_batch_size,
             )
         self.embedder = embedder
-        self.reranker = reranker
         self._query_cache: dict[str, np.ndarray] = {}
 
     def prepare_queries(self, queries: Iterable[str]) -> None:
@@ -227,7 +220,6 @@ class SearchEngine:
         *,
         k: int = 8,
         years: int | None = None,
-        rerank_pool: int = 0,
         channels: Iterable[str] = CHANNELS,
     ) -> SearchResponse:
         channels = tuple(channels)
@@ -236,7 +228,7 @@ class SearchEngine:
             raise ValueError(f"unknown search channel(s): {', '.join(sorted(unknown))}")
         admissible = self._admissible(years)
         if not len(admissible):
-            return SearchResponse((), False)
+            return SearchResponse(())
         if query not in self._query_cache:
             self._query_cache[query] = np.asarray(self.embedder.encode_query(query), dtype=np.float32)
         query_vector = self._query_cache[query]
@@ -247,7 +239,7 @@ class SearchEngine:
         tree_scores = self._tree_scores(query, dense, admissible)
         knn_scores = self._knn_scores(dense, admissible)
         raw_scores = {"text": text_scores, "dense": dense, "tree": tree_scores, "knn": knn_scores}
-        pool = max(k, rerank_pool, self.config.candidate_pool)
+        pool = max(k, self.config.candidate_pool)
         rankings = {
             channel: _rank(raw_scores[channel], admissible, pool, positive_only=channel == "text")
             for channel in channels
@@ -263,8 +255,7 @@ class SearchEngine:
             set(index for ranking in rankings.values() for index in ranking),
             key=lambda index: (-float(fused[index]), self.chunks[index]["id"]),
         )
-        requested_pool = max(k, rerank_pool) if rerank_pool else k
-        candidates = candidates[:requested_pool]
+        candidates = candidates[:k]
         hits = []
         for index in candidates:
             hits.append(
@@ -276,29 +267,9 @@ class SearchEngine:
                 )
             )
 
-        reranked = False
-        if rerank_pool and hits:
-            reranker = self.reranker
-            if reranker is None:
-                try:
-                    from .embedder import CrossEncoderReranker
-
-                    reranker = CrossEncoderReranker()
-                except (ImportError, OSError, RuntimeError):
-                    reranker = None
-            if reranker is not None:
-                try:
-                    scores = reranker.score(query, [str(hit.chunk.get("text") or "") for hit in hits])
-                    for hit, score in zip(hits, scores, strict=True):
-                        hit.rerank_score = float(score)
-                    hits.sort(key=lambda hit: (-(hit.rerank_score if hit.rerank_score is not None else -math.inf), -hit.score, hit.chunk["id"]))
-                    reranked = True
-                except (ImportError, OSError, RuntimeError, ValueError):
-                    reranked = False
-        hits = hits[:k]
         for hit in hits:
             hit.related_evidence = self._related(hit.chunk)
-        return SearchResponse(tuple(hits), reranked)
+        return SearchResponse(tuple(hits))
 
 
 def _auto_decision(response: SearchResponse, config: Config) -> tuple[str, str]:
@@ -307,8 +278,6 @@ def _auto_decision(response: SearchResponse, config: Config) -> tuple[str, str]:
     top_dense = float(response.hits[0].channel_scores.get("dense", -math.inf))
     if top_dense < config.auto_none_cosine:
         return "none", "below-none-threshold"
-    if not response.reranked:
-        return "review", "reranker-unavailable"
     if response.hits[0].related_evidence or response.hits[0].chunk.get("disputed"):
         return "review", "related-hygiene-evidence"
     runner_dense = float(response.hits[1].channel_scores.get("dense", -math.inf)) if len(response.hits) > 1 else -math.inf
@@ -325,7 +294,6 @@ def main() -> int:
     parser.add_argument("query")
     parser.add_argument("--vault", type=Path, default=None)
     parser.add_argument("--k", type=int, default=8)
-    parser.add_argument("--rerank", nargs="?", const=20, default=0, type=int, metavar="N")
     parser.add_argument("--auto", action="store_true")
     parser.add_argument("--range", dest="range_years", type=int, default=None, metavar="YEARS")
     parser.add_argument("--no-daemon", action="store_true", help="search in this process even when wiki-daemon is running")
@@ -333,7 +301,6 @@ def main() -> int:
     args = parser.parse_args()
     try:
         config = load(args.vault)
-        rerank_pool = args.rerank or (10 if args.auto else 0)
         daemon_payload = None
         if not args.no_daemon:
             from .service import read_daemon_state, request
@@ -345,7 +312,6 @@ def main() -> int:
                     "query": args.query,
                     "k": args.k,
                     "range_years": args.range_years,
-                    "rerank_pool": rerank_pool,
                     "auto": args.auto,
                 },
             )
@@ -360,7 +326,6 @@ def main() -> int:
                 args.query,
                 k=args.k,
                 years=args.range_years,
-                rerank_pool=rerank_pool,
             )
     except (FileNotFoundError, ImportError, RuntimeError, ValueError) as exc:
         print(f"wiki-search: {exc}", file=sys.stderr)
@@ -373,7 +338,6 @@ def main() -> int:
         payload: dict[str, Any] = {
             "query": args.query,
             "range_years": args.range_years,
-            "reranked": response.reranked,
             "results": [hit.to_dict() for hit in response.hits],
         }
         if args.auto:

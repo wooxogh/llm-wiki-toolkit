@@ -32,6 +32,7 @@ class Config:
     auto_none_cosine: float = 0.30
     auto_margin: float = 0.04
     review_similarity: float = 0.72
+    review_query_limit: int = 12
 
 
 def find_config_dir(start: Path | None = None) -> Path:
@@ -117,4 +118,5 @@ def load(start: Path | None = None) -> Config:
         auto_none_cosine=_number(v3.get("auto_none_cosine"), 0.30, "auto_none_cosine"),
         auto_margin=_number(v3.get("auto_margin"), 0.04, "auto_margin"),
         review_similarity=_number(v3.get("review_similarity"), 0.72, "review_similarity"),
+        review_query_limit=_positive_int(v3.get("review_query_limit"), 12, "review_query_limit"),
     )

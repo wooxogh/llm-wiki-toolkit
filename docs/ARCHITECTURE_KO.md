@@ -54,8 +54,7 @@ flowchart LR
     F --> L
     H --> L
     I --> L
-    L --> M[Optional cross-encoder rerank]
-    M --> N[근거 chunk + provenance + hygiene evidence]
+    L --> N[근거 chunk + provenance + hygiene evidence]
     N --> O[Codex / Claude]
     O --> P[사용자 답변 또는 사용자 승인 요청]
 
@@ -70,7 +69,7 @@ flowchart LR
 
 1. **원본 층**: 사용자가 관리하는 Markdown 문서
 2. **색인 층**: chunk, vector, BM25, Tree, k-NN graph
-3. **검색 층**: 네 채널 검색, RRF 결합, 선택적 reranking
+3. **검색 층**: 네 채널 검색과 RRF 결합
 4. **판단 층**: Codex/Claude와 사용자 승인에 의한 문서 위생 처리
 
 ## 3. 핵심 용어
@@ -282,8 +281,10 @@ chunk를 자르지 않는다.
 따라서 같은 문서는 sentence embedding을 재사용할 수 있지만, 문서 문장 하나가
 바뀌면 현재 구현에서는 그 문서의 sentence cache 전체 key가 달라진다.
 
-`device="auto"`는 PyTorch가 CUDA를 사용할 수 있으면 GPU를, 그렇지 않으면 CPU를
-선택한다.
+`device="auto"`는 CUDA를 먼저 선택하고, CUDA가 없고 Apple MPS를 사용할 수 있으면
+MPS를 선택한 뒤, 둘 다 사용할 수 없을 때 CPU를 선택한다. macOS에서 MPS를 선택할 수
+있는 경우 `PYTORCH_ENABLE_MPS_FALLBACK=1`을 설정해 MPS에 없는 PyTorch 연산만 CPU로
+실행한다.
 
 ## 7. Semantic chunker의 원리
 
@@ -566,8 +567,7 @@ flowchart TD
     D --> F
     R --> F
     K --> F
-    F --> X[Optional reranker]
-    X --> O[Final hits + related evidence]
+    F --> O[Final hits + related evidence]
 ```
 
 검색 전에 `searchable=true`, `status != retracted`, `--range` 조건을 적용한다. 즉
@@ -653,25 +653,14 @@ RRF(document) = sum_channel(
 Dense를 중심으로 사용하되 정확한 단어와 문서 구조, 의미 이웃을 보조 증거로
 활용하는 설정이다.
 
-### 10.6 Optional reranker
-
-`--rerank N`을 사용하면 RRF 상위 N개 query/chunk raw text pair를
-`BAAI/bge-reranker-v2-m3` Cross-Encoder로 다시 평가한다. Reranker는 query와 chunk를
-동시에 읽으므로 embedding 내적보다 정밀하지만 느리다.
-
-Reranker 로딩이나 inference가 실패하면 기본 검색 결과를 유지하고
-`reranked=false`를 반환한다. 검색 자체를 실패시키지 않는 graceful fallback이다.
-
-### 10.7 `--auto` 검색 confidence와 사실 판단
+### 10.6 `--auto` 검색 confidence와 사실 판단
 
 `wiki-search --auto`는 답변을 생성하지 않는다. 검색 결과가 retrieval 관점에서 바로
-사용될 만큼 분명한지 `answer`, `review`, `none`으로 분류한다. 내부적으로 rerank pool
-10을 요청한다.
+사용될 만큼 분명한지 `answer`, `review`, `none`으로 분류한다.
 
 ```text
 검색 결과 없음                      -> none
 top dense < 0.30                    -> none
-reranker 사용 불가                  -> review
 supersede/dispute evidence 존재      -> review
 top dense < 0.55                    -> review
 top dense - second dense < 0.04     -> review
@@ -812,7 +801,6 @@ Decision은 `user_approved=true`를 요구한다. `expected_content_hash`가 제
 | `text_dense_tree` | Text + Dense + Tree |
 | `text_dense_knn` | Text + Dense + k-NN |
 | `full` | 네 채널 모두 |
-| `full_rerank` | Full + reranker, 요청 시 |
 
 Query embedding은 variant마다 반복하지 않고 한 번 계산해 cache한다. 각 variant에
 대해 다음 metric을 계산한다.
@@ -832,7 +820,7 @@ Query embedding은 variant마다 반복하지 않고 한 번 계산해 cache한�
 | 설정 | 기본값 | 역할 |
 |---|---:|---|
 | `model_id` | Qwen3-Embedding-0.6B | 문장/chunk/query embedding 모델 |
-| `embed_device` | `auto` | CUDA 또는 CPU 선택 |
+| `embed_device` | `auto` | CUDA, Apple MPS, CPU 순서로 선택 |
 | `embedding_batch_size` | 32 | embedding batch 크기 |
 | `chunk_boundary_keep_threshold` | 0.66 | Attention KEEP 기준 |
 | `chunk_candidate_budget` | 0.50 | Attention으로 보낼 gap 비율 |
@@ -844,6 +832,7 @@ Query embedding은 variant마다 반복하지 않고 한 번 계산해 cache한�
 | `tree_weight` | 0.8 | Tree 채널 가중치 |
 | `knn_weight` | 0.8 | k-NN 채널 가중치 |
 | `review_similarity` | 0.72 | health review pair 최소 cosine |
+| `review_query_limit` | 12 | 일반 검색에 붙일 query-scoped comparison 후보 상한 |
 
 가중치와 threshold는 모델의 보편적 진리가 아니라 현재 operating point다. 공개
 기본값을 바꿀 때는 gold evaluation 결과와 함께 변경해야 한다.
@@ -863,8 +852,7 @@ Query embedding은 variant마다 반복하지 않고 한 번 계산해 cache한�
 ### 검색
 
 Query embedding이 가장 큰 고정 비용이다. BM25, Tree, k-NN propagation, RRF는
-상대적으로 가볍다. Reranker는 후보 pair를 직접 읽기 때문에 후보 수에 비례해
-추가 비용이 발생한다.
+상대적으로 가볍다.
 
 ### 현재 확장성 한계
 
@@ -881,8 +869,7 @@ directory 같은 후속 설계가 필요하다.
 | 상황 | 현재 동작 |
 |---|---|
 | Qwen 모델 없음 | 첫 사용 시 다운로드 필요 |
-| CUDA 없음 | CPU fallback |
-| Reranker 실패 | RRF 결과 유지, `reranked=false` |
+| CUDA 없음 | Apple MPS가 가능하면 MPS, 아니면 CPU |
 | 원문 수정 후 미색인 | `wiki-health`가 `index-stale` 보고 |
 | source span 손상 | health error |
 | correction 생성 후 미색인 | `correction-not-embedded` |
@@ -897,8 +884,8 @@ directory 같은 후속 설계가 필요하다.
 |---|---|
 | [`config.py`](../src/llm_wiki_v3/config.py) | `wiki.toml` 탐색, 검증, runtime 설정 |
 | [`indexing.py`](../src/llm_wiki_v3/indexing.py) | 증분 build, Tree/k-NN/sparse artifact 생성 |
-| [`search.py`](../src/llm_wiki_v3/search.py) | 네 채널 검색, RRF, range, auto, rerank |
-| [`embedder.py`](../src/llm_wiki_v3/embedder.py) | Qwen query/chunk embedding, optional reranker |
+| [`search.py`](../src/llm_wiki_v3/search.py) | 네 채널 검색, RRF, range, auto |
+| [`embedder.py`](../src/llm_wiki_v3/embedder.py) | Qwen query/chunk embedding |
 | [`hygiene.py`](../src/llm_wiki_v3/hygiene.py) | append-only event와 metadata overlay |
 | [`health.py`](../src/llm_wiki_v3/health.py) | artifact/provenance 검사와 review/apply CLI |
 | [`evaluate.py`](../src/llm_wiki_v3/evaluate.py) | gold validation, retrieval ablation metrics |
@@ -936,7 +923,6 @@ directory 같은 후속 설계가 필요하다.
 - deterministic directory/document/heading Tree
 - exact k-NN graph
 - BM25 + Dense + Tree + k-NN weighted RRF
-- optional local Cross-Encoder reranking
 - append-only hygiene events
 
 현재 구현에 아직 없는 것:
@@ -965,10 +951,9 @@ directory 같은 후속 설계가 필요하다.
 4. Tree channel이 `Client > Retry` heading 아래 chunk에 구조 점수를 준다.
 5. k-NN이 retry policy의 설명/관측성 이웃을 보완 후보로 올린다.
 6. RRF가 네 순위를 하나로 합친다.
-7. 요청했다면 Cross-Encoder가 상위 후보를 다시 정렬한다.
-8. 관련 chunk가 superseded/disputed 상태면 successor/counterpart도 함께 반환한다.
-9. Codex/Claude가 `source_path`, heading, timestamp, 관련 evidence를 읽는다.
-10. 근거가 명확하면 답하고, 충돌하면 사용자에게 불확실성을 설명한다.
+7. 관련 chunk가 superseded/disputed 상태면 successor/counterpart도 함께 반환한다.
+8. Codex/Claude가 `source_path`, heading, timestamp, 관련 evidence를 읽는다.
+9. 근거가 명확하면 답하고, 충돌하면 사용자에게 불확실성을 설명한다.
 
 이 과정에서 검색 프로그램은 답변 문장을 생성하지 않는다. 프로그램의 결과는
 LLM이 읽을 수 있는 **근거 묶음**이다.

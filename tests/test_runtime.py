@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import os
+import sys
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
-from llm_wiki_v3.chunking.runtime import QwenSentenceEmbedder
+from llm_wiki_v3.chunking.runtime import QwenSentenceEmbedder, resolve_device
 
 
 class _FakeSentenceTransformer:
@@ -18,6 +22,15 @@ class _FakeSentenceTransformer:
 
 
 class QwenSentenceEmbedderTests(unittest.TestCase):
+    def test_auto_prefers_mps_on_apple_and_enables_targeted_fallback(self):
+        torch = SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: False),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True)),
+        )
+        with patch.dict(sys.modules, {"torch": torch}), patch("llm_wiki_v3.chunking.runtime.sys.platform", "darwin"), patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(resolve_device("auto"), "mps")
+            self.assertEqual(os.environ["PYTORCH_ENABLE_MPS_FALLBACK"], "1")
+
     def test_length_sorting_reduces_padding_order_and_restores_original_vector_order(self):
         embedder = QwenSentenceEmbedder("fake", batch_size=2, sort_by_length=True)
         fake_model = _FakeSentenceTransformer()

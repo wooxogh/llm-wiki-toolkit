@@ -9,14 +9,23 @@ Treat Markdown and `_wiki_corrections/` as source material. Treat `.llm_wiki_v3/
 as derived data. The CLI retrieves evidence; you interpret it and obtain the
 user's decision.
 
+When first time running llm-wiki-v3, host LLM must ask user whether to turn `wiki-daemon` and `wiki-autoembed` on.
+Describe simple functions of `wiki-daemon` and `wiki-autoembed`.
+
 ## Search
 
 Run `wiki-search "<question>" --json`. Read every returned chunk's
 `related_evidence`, especially `SUPERSEDED_BY` and `DISPUTED_WITH` records.
 
-Run `wiki-search "<question>" --json --rerank` for more accurate search.
+`wiki-search` performs retrieval only. It does not run `wiki-health review`.
+When semantic-comparison evidence is needed, or the search results are not
+sufficient to answer with confidence and need surrounding or linked context,
+explicitly pass retrieved chunk IDs to `wiki-health review --scope query
+--chunk-id <id> --json`. This is comparison evidence, not a contradiction
+judgment.
 
-Use `--range N` only when the user asks for recent material.
+Use `--range N` only when the user asks for recent material. With no
+retrieved chunks, do not invent a wiki answer.
 
 ### Mandatory evidence and fact-check gate
 
@@ -29,9 +38,16 @@ For every wiki-backed response with retrieved chunks, before answering:
 1. Read every returned chunk and its `related_evidence`; do not rely only on
    the top-ranked chunk.
 2. If sequential information related to the chunk is needed, refer previous/next chunk by `previous_chunk_id` or `next_chunk_id`.
-3. Run `wiki-health review --vault <vault> --json` once. Read every candidate
-   pair relevant to the retrieved chunks, their source documents, or the query.
+3. When semantic comparison is needed or the retrieved evidence is
+   insufficient, explicitly run `wiki-health review --scope query` with the
+   retrieved chunk IDs. Read only returned pairs relevant to the chunks, their
+   source documents, or the query.
 4. Compare exact claims, scope, version, environment, dates, and timestamps.
+
+Do not run `wiki-health review --scope global` for every question. Use it only
+when the user explicitly asks for a whole-vault hygiene audit. To inspect a
+larger neighborhood for known chunks, use `wiki-health review --scope query
+--chunk-id <id> --json`.
 
 If this review reveals a possible contradiction, an apparently incorrect
 claim, or missing information that could change the answer, do not choose a

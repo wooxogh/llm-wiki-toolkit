@@ -89,10 +89,8 @@ def _metrics(results: list[tuple[dict[str, Any], list[dict[str, Any]]]], k: int)
     }
 
 
-def evaluate(engine: SearchEngine, gold: list[dict[str, Any]], *, k: int, rerank_pool: int = 0) -> dict[str, Any]:
+def evaluate(engine: SearchEngine, gold: list[dict[str, Any]], *, k: int) -> dict[str, Any]:
     variants = dict(BASE_VARIANTS)
-    if rerank_pool:
-        variants["full_rerank"] = BASE_VARIANTS["full"]
     embedding_started = perf_counter()
     engine.prepare_queries(item["query"] for item in gold)
     embedding_seconds = perf_counter() - embedding_started
@@ -105,7 +103,6 @@ def evaluate(engine: SearchEngine, gold: list[dict[str, Any]], *, k: int, rerank
                 item["query"],
                 k=k,
                 years=item.get("range_years"),
-                rerank_pool=rerank_pool if name == "full_rerank" else 0,
                 channels=channels,
             )
             rows.append((item, [hit.chunk for hit in response.hits]))
@@ -116,7 +113,6 @@ def evaluate(engine: SearchEngine, gold: list[dict[str, Any]], *, k: int, rerank
             "total_seconds": round(elapsed, 6),
             "mean_latency_ms": round(elapsed * 1000 / max(len(gold), 1), 4),
             "channels": list(channels),
-            "rerank_pool": rerank_pool if name == "full_rerank" else 0,
         }
     return {
         "query_embedding_total_seconds": round(embedding_seconds, 6),
@@ -131,7 +127,6 @@ def main() -> int:
     parser.add_argument("--vault", type=Path, default=None)
     parser.add_argument("--gold", type=Path, default=None)
     parser.add_argument("--k", type=int, default=8)
-    parser.add_argument("--rerank", nargs="?", const=20, default=0, type=int, metavar="N")
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--json", action="store_true")
@@ -143,7 +138,7 @@ def main() -> int:
         if args.validate_only:
             payload = {"ok": True, "gold": str(gold_path), "query_count": len(gold)}
         else:
-            evaluation = evaluate(SearchEngine(config), gold, k=args.k, rerank_pool=args.rerank)
+            evaluation = evaluate(SearchEngine(config), gold, k=args.k)
             payload = {
                 "gold": str(gold_path),
                 "k": args.k,

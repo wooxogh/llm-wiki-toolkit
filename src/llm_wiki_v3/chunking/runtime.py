@@ -1,6 +1,8 @@
 """Lazy Qwen embedding and Small-V3 Attention checkpoint runtime."""
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -11,13 +13,22 @@ from .semantic import BoundaryContext
 
 
 def resolve_device(requested: str) -> str:
+    # PyTorch reads this setting while importing/initializing MPS. Set it
+    # before the torch import so unsupported MPS ops alone can fall back.
+    if requested in {"auto", "mps"} and sys.platform == "darwin":
+        os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     if requested != "auto":
         return requested
     try:
         import torch
     except ImportError:
         return "cpu"
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 class QwenSentenceEmbedder:

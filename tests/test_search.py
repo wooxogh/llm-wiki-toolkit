@@ -19,11 +19,6 @@ class FakeEmbedder:
         return np.asarray([1.0, 0.0], dtype=np.float32)
 
 
-class FakeReranker:
-    def score(self, query: str, texts: list[str]) -> list[float]:
-        return [0.1 if "two" in text else 0.9 for text in texts]
-
-
 class SearchTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -87,20 +82,12 @@ class SearchTests(unittest.TestCase):
         engine = SearchEngine(self.config, embedder=FakeEmbedder(), now=datetime(2030, 8, 26, tzinfo=timezone.utc))
         self.assertEqual(engine.search("retry", years=1).hits, ())
 
-    def test_reranker_reorders_the_fused_candidate_pool(self):
-        engine = SearchEngine(self.config, embedder=FakeEmbedder(), reranker=FakeReranker())
-        response = engine.search("retry", k=2, rerank_pool=2)
-        self.assertTrue(response.reranked)
-        self.assertEqual(response.hits[0].chunk["id"], "new")
-        self.assertEqual(response.hits[0].rerank_score, 0.9)
-
     def test_auto_decision_uses_retrieval_confidence_not_truth(self):
         response = SearchResponse(
             (
                 SearchHit({"id": "first"}, 0.8, channel_scores={"dense": 0.90}),
                 SearchHit({"id": "second"}, 0.7, channel_scores={"dense": 0.80}),
             ),
-            reranked=True,
         )
         self.assertEqual(_auto_decision(response, self.config), ("answer", "clear-margin"))
 
@@ -114,7 +101,6 @@ class SearchTests(unittest.TestCase):
                     related_evidence=[{"relation": "SUPERSEDED_BY"}],
                 ),
             ),
-            reranked=True,
         )
         self.assertEqual(_auto_decision(response, self.config), ("review", "related-hygiene-evidence"))
 

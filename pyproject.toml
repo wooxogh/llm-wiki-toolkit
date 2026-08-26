@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-wiki-v3"
-version = "0.2.0"
+version = "0.4.0"
 description = "Local-first Markdown retrieval with Chunker V3, Tree, and k-NN"
 readme = "README.md"
 license = "MIT"

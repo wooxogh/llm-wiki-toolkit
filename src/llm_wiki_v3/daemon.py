@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from .config import Config, load
-from .embedder import CrossEncoderReranker
 from .indexing import _default_runtime, build
 from .io import configure_stdio
 from .search import SearchEngine, _auto_decision
@@ -33,13 +32,12 @@ def _startup_event(config: Config, message: str) -> None:
 
 
 class WikiRuntime:
-    """Own one embedding model, optional reranker, and one loaded index."""
+    """Own one embedding model, one chunker, and one loaded index."""
 
     def __init__(self, config: Config) -> None:
         self.config = config
         self.lock = threading.RLock()
         self.embedder, self.chunker = _default_runtime(config)
-        self.reranker = CrossEncoderReranker()
         self.engine: SearchEngine | None = None
         self.generation = 0
         self.last_build: dict[str, Any] | None = None
@@ -47,7 +45,6 @@ class WikiRuntime:
 
     def start(self) -> None:
         # Load the two always-used models once rather than on the first event.
-        # The optional reranker stays lazy because most searches do not request it.
         _startup_event(self.config, f"runtime={self.runtime_id} loading Qwen embedding model on {self.embedder._delegate.device}")
         self.embedder._delegate._load_model()
         _startup_event(self.config, f"runtime={self.runtime_id} Qwen embedding model ready")
@@ -62,7 +59,7 @@ class WikiRuntime:
 
     def reload_index(self, *, required: bool) -> bool:
         try:
-            self.engine = SearchEngine(self.config, embedder=self.embedder, reranker=self.reranker)
+            self.engine = SearchEngine(self.config, embedder=self.embedder)
         except RuntimeError:
             if required:
                 raise
@@ -81,7 +78,6 @@ class WikiRuntime:
             "runtime_id": self.runtime_id,
             "qwen_loaded": self.embedder._delegate._model is not None,
             "small_v3_loaded": self.chunker._verifier is not None,
-            "reranker_loaded": self.reranker._model is not None,
         }
 
     def embed(self, changed_paths: list[str] | None = None, *, full: bool = False) -> dict[str, Any]:
@@ -114,12 +110,10 @@ class WikiRuntime:
                 query,
                 k=int(payload.get("k", 8)),
                 years=payload.get("range_years"),
-                rerank_pool=int(payload.get("rerank_pool", 0)),
             )
             result: dict[str, Any] = {
                 "query": query,
                 "range_years": payload.get("range_years"),
-                "reranked": response.reranked,
                 "results": [hit.to_dict() for hit in response.hits],
                 "generation": self.generation,
             }

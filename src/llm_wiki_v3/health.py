@@ -131,7 +131,7 @@ def inspect(config: Config) -> list[HealthIssue]:
     return issues
 
 
-def review_bundles(config: Config, *, limit: int = 50) -> list[dict[str, Any]]:
+def _semantic_comparison_candidates(config: Config) -> list[dict[str, Any]]:
     chunks = apply_events(read_jsonl(config.artifact_dir / "chunks.jsonl"), read_events(config))
     graph_path = config.artifact_dir / "knn_graph.npz"
     if not graph_path.is_file() or not chunks:
@@ -163,7 +163,117 @@ def review_bundles(config: Config, *, limit: int = 50) -> list[dict[str, Any]]:
                 }
             )
     candidates.sort(key=lambda row: (-row["cosine_similarity"], row["left"]["id"], row["right"]["id"]))
-    return candidates[:limit]
+    return candidates
+
+
+def review_bundles(config: Config, *, limit: int = 50) -> list[dict[str, Any]]:
+    """Return whole-vault semantic comparison candidates for periodic audits."""
+    return _semantic_comparison_candidates(config)[:limit]
+
+
+def _linked_scope_ids(chunk: dict[str, Any]) -> dict[str, str]:
+    links: dict[str, str] = {}
+    for field in ("previous_chunk_id", "next_chunk_id"):
+        target_id = str(chunk.get(field) or "")
+        if target_id:
+            links[target_id] = "adjacent"
+    for claim in chunk.get("superseded_claims") or []:
+        target_id = str(claim.get("superseded_by_chunk_id") or "")
+        if target_id:
+            links[target_id] = "related"
+    for claim in chunk.get("supersedes") or []:
+        target_id = str(claim.get("chunk_id") or "")
+        if target_id:
+            links[target_id] = "related"
+    for target_id in [*(chunk.get("replaced_by") or []), *(chunk.get("corrects") or [])]:
+        if str(target_id):
+            links[str(target_id)] = "related"
+    for dispute in chunk.get("disputes") or []:
+        for target_id in dispute.get("counterpart_chunk_ids") or []:
+            if str(target_id):
+                links[str(target_id)] = "related"
+    return links
+
+
+def review_query_scope(config: Config, chunk_ids: list[str], *, limit: int | None = None) -> dict[str, Any]:
+    """Limit semantic-comparison evidence to a retrieved chunk neighborhood.
+
+    The scope starts with retrieval hits, then adds only their direct document
+    neighbors and hygiene-linked chunks. It never runs an embedder or an LLM.
+    """
+    candidates = _semantic_comparison_candidates(config)
+    by_id = {
+        str(chunk["id"]): chunk
+        for chunk in apply_events(read_jsonl(config.artifact_dir / "chunks.jsonl"), read_events(config))
+    }
+    reasons: dict[str, set[str]] = {}
+    seed_ids = []
+    for chunk_id in dict.fromkeys(map(str, chunk_ids)):
+        if chunk_id in by_id:
+            reasons.setdefault(chunk_id, set()).add("retrieved")
+            seed_ids.append(chunk_id)
+    for chunk_id in seed_ids:
+        for linked_id, reason in _linked_scope_ids(by_id[chunk_id]).items():
+            if linked_id in by_id:
+                reasons.setdefault(linked_id, set()).add(reason)
+
+    scoped = []
+    for candidate in candidates:
+        left_id = str(candidate["left"]["id"])
+        right_id = str(candidate["right"]["id"])
+        matches = []
+        for chunk_id in (left_id, right_id):
+            if chunk_id in reasons:
+                matches.append({"chunk_id": chunk_id, "scope_reasons": sorted(reasons[chunk_id])})
+        if not matches:
+            continue
+        scoped.append(
+            {
+                **candidate,
+                "scope_matches": matches,
+                "_direct_retrieval": int(left_id in seed_ids or right_id in seed_ids),
+                "_both_in_scope": int(left_id in reasons and right_id in reasons),
+            }
+        )
+    scoped.sort(
+        key=lambda row: (
+            -row["_direct_retrieval"],
+            -row["_both_in_scope"],
+            -row["cosine_similarity"],
+            row["left"]["id"],
+            row["right"]["id"],
+        )
+    )
+    for candidate in scoped:
+        candidate.pop("_direct_retrieval")
+        candidate.pop("_both_in_scope")
+    resolved_limit = config.review_query_limit if limit is None else limit
+    return {
+        "scope": "query",
+        "seed_chunk_ids": seed_ids,
+        "context_chunk_ids": sorted(reasons),
+        "matched_candidate_count": len(scoped),
+        "candidates": scoped[:resolved_limit],
+    }
+
+
+def _query_seed_ids(config: Config, query: str, *, k: int) -> list[str]:
+    from .service import read_daemon_state, request
+
+    daemon_response = request(
+        config.artifact_dir,
+        {"action": "search", "query": query, "k": k},
+    )
+    if daemon_response is not None:
+        if not daemon_response.get("ok"):
+            raise RuntimeError(str(daemon_response.get("error") or "daemon search failed"))
+        results = daemon_response["result"].get("results") or []
+        return [str(item.get("chunk", {}).get("id")) for item in results if item.get("chunk", {}).get("id")]
+    if read_daemon_state(config.artifact_dir) is not None:
+        raise RuntimeError("wiki-daemon state exists but it is not reachable; run wiki-daemon status or restart it")
+    from .search import SearchEngine
+
+    return [str(hit.chunk["id"]) for hit in SearchEngine(config).search(query, k=k).hits]
 
 
 def report(config: Config) -> dict[str, Any]:
@@ -183,7 +293,11 @@ def _parser() -> argparse.ArgumentParser:
     review = subparsers.add_parser("review", help="emit evidence pairs for the host LLM")
     review.add_argument("--vault", type=Path, default=None)
     review.add_argument("--json", action="store_true")
-    review.add_argument("--limit", type=int, default=50)
+    review.add_argument("--scope", choices=("global", "query"), default="global")
+    review.add_argument("--limit", type=int, default=None)
+    review.add_argument("--query", type=str, default=None)
+    review.add_argument("--chunk-id", action="append", default=[])
+    review.add_argument("--k", type=int, default=8)
     apply_parser = subparsers.add_parser("apply", help="apply a user-approved decision JSON")
     apply_parser.add_argument("decision", type=Path)
     apply_parser.add_argument("--vault", type=Path, default=None)
@@ -198,7 +312,21 @@ def main() -> int:
     try:
         config = load(args.vault)
         if args.command == "review":
-            payload = {"candidates": review_bundles(config, limit=args.limit)}
+            if args.limit is not None and args.limit <= 0:
+                raise ValueError("--limit must be positive")
+            if args.scope == "global":
+                if args.query or args.chunk_id:
+                    raise ValueError("--query and --chunk-id require --scope query")
+                payload = {"scope": "global", "candidates": review_bundles(config, limit=args.limit or 50)}
+            else:
+                if args.query and args.chunk_id:
+                    raise ValueError("use either --query or --chunk-id with --scope query")
+                if args.k <= 0:
+                    raise ValueError("--k must be positive")
+                if not args.query and not args.chunk_id:
+                    raise ValueError("--scope query requires --query or at least one --chunk-id")
+                chunk_ids = args.chunk_id or _query_seed_ids(config, args.query, k=args.k)
+                payload = review_query_scope(config, chunk_ids, limit=args.limit)
             print(json.dumps(payload, ensure_ascii=False) if args.json else json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
         if args.command == "apply":

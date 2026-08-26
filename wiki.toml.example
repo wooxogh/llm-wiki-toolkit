@@ -22,3 +22,4 @@ auto_answer_cosine = 0.55
 auto_none_cosine = 0.30
 auto_margin = 0.04
 review_similarity = 0.72
+review_query_limit = 12

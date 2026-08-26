@@ -16,12 +16,12 @@ artifacts, invariants, and source modules, see
 
 - Python 3.11 through 3.13
 - About 1.2 GB for the Qwen embedding model downloaded on first use
-- CUDA is used automatically when PyTorch can see a compatible GPU; CPU works
-  but initial embedding is substantially slower
+- `embed_device = "auto"` selects CUDA first, Apple MPS second, then CPU.
+  MPS enables `PYTORCH_ENABLE_MPS_FALLBACK=1` so only PyTorch operations not
+  implemented on MPS run on CPU.
 
 The 7.4 MB Small-V3 Attention checkpoint is included in the package. No API key
-is required for indexing or retrieval. `--rerank` downloads and runs the local
-`BAAI/bge-reranker-v2-m3` model unless `WIKI_RERANK_MODEL` is set.
+is required for indexing or retrieval.
 
 ## Install
 
@@ -104,6 +104,7 @@ model_id = "Qwen/Qwen3-Embedding-0.6B"
 embed_device = "auto"
 chunk_boundary_keep_threshold = 0.66
 chunk_candidate_budget = 0.50
+review_query_limit = 12
 ```
 
 `chunk_boundary_keep_threshold` controls how readily Small Attention preserves
@@ -117,27 +118,33 @@ shows otherwise.
 ```bash
 wiki-embed --vault /path/to/markdown
 wiki-search "how is retry handled?" --vault /path/to/markdown --auto --json
-wiki-search "recent migration decisions" --vault /path/to/markdown --range 2 --rerank
+wiki-search "recent migration decisions" --vault /path/to/markdown --range 2
 wiki-health --vault /path/to/markdown
+wiki-health review --vault /path/to/markdown --scope global --json
+wiki-health review --vault /path/to/markdown --scope query --query "how is retry handled?" --json
 wiki-eval --vault /path/to/markdown --gold eval_gold_v3.json
 ```
 
 - `wiki-embed` incrementally builds chunks, vectors, BM25 data, tree nodes, and
   k-NN links under `.llm_wiki_v3/`.
 - `wiki-search` fuses text, dense, tree, and k-NN evidence with weighted RRF.
-  `--auto` reports answer/review/none retrieval confidence; `--range N` limits
-  source age. The host LLM assesses evidence rather than treating this as a
-  factual decision.
+  It performs retrieval only: `--auto` reports answer/review/none retrieval
+  confidence and `--range N` limits source age. It never runs health review
+  implicitly. The host LLM assesses returned evidence rather than treating
+  scores as a factual decision.
 - `wiki-health` checks artifact and provenance integrity. Its `review` command
   only prepares evidence for an agent and user; it does not decide truth.
+  `--scope global` scans the vault for scheduled audits, while `--scope query`
+  limits the comparison material to a query or explicit retrieved chunk IDs.
+  After search, prefer `--chunk-id` so the review does not issue another search.
 - `wiki-eval` runs retrieval ablations against a maintained gold query file.
   It is an evaluation tool, not an automatic judge of document correctness.
 
 ### Resident model runtime and automatic embedding
 
 For repeated CLI searches, start one local daemon per vault. It owns the Qwen
-embedding model, the Chunker V3 runtime, the optional reranker, and the loaded
-retrieval index. It listens only on `127.0.0.1`; its connection state is stored
+embedding model, the Chunker V3 runtime, and the loaded retrieval index. It
+listens only on `127.0.0.1`; its connection state is stored
 under `.llm_wiki_v3/daemon.json` and is not committed source material.
 
 ```powershell
@@ -169,9 +176,9 @@ In foreground mode, every detected Markdown change and completed incremental
 embed is printed in that watcher terminal. A background process cannot print
 into the terminal that launched it, so the same events are appended to
 `.llm_wiki_v3/autoembed.log`; use `wiki-autoembed logs` to inspect them.
-`wiki-daemon status --json` reports a stable runtime ID and whether Qwen,
-Small-V3, and the optional reranker are currently loaded. During normal daemon
-operation that runtime ID must remain unchanged across automatic embeds.
+`wiki-daemon status --json` reports a stable runtime ID and whether Qwen and
+Small-V3 are currently loaded. During normal daemon operation that runtime ID
+must remain unchanged across automatic embeds.
 
 `wiki-daemon start --background` waits for Qwen and Small-V3 to finish loading
 before it returns. `wiki-autoembed --initial` queues its first build and keeps
@@ -222,7 +229,7 @@ and dataset provenance.
 
 ```bash
 python -m build
-python -m pip install --force-reinstall "dist/llm_wiki_v3-0.1.0-py3-none-any.whl[ml]"
+python -m pip install --force-reinstall "dist/llm_wiki_v3-0.4.0-py3-none-any.whl[ml]"
 python -m llm_wiki_v3.skill_install --help
 ```
 
