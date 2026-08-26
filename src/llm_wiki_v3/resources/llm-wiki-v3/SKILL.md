@@ -9,6 +9,9 @@ Treat Markdown and `_wiki_corrections/` as source material. Treat `.llm_wiki_v3/
 as derived data. The CLI retrieves evidence; you interpret it and obtain the
 user's decision.
 
+When first time running llm-wiki-v3, ask user whether to turn `wiki-daemon` and `wiki-autoembed`.
+Describe simple functions of `wiki-daemon` and `wiki-autoembed`.
+
 ## Search
 
 Run `wiki-search "<question>" --auto --json`. Read every returned chunk's

@@ -26,8 +26,8 @@ is required for indexing or retrieval. `--rerank` downloads and runs the local
 ## Install
 
 ```bash
-git clone <repository-url>
-cd llm-wiki-v3
+git clone https://github.com/wooxogh/llm-wiki-toolkit.git
+cd llm-wiki-toolkit/llm-wiki-v3
 python -m pip install ".[ml]"
 ```
 
@@ -40,6 +40,18 @@ python -m pytest
 
 On Windows, use `python -m llm_wiki_v3.indexing` if the Python `Scripts`
 directory containing `wiki-embed.exe` is not on `PATH`.
+
+### Existing V1/V2 installations
+
+V3 uses the canonical `wiki-*` commands. Do not install V1/V2 and V3 into the
+same Python environment: they share names such as `wiki-embed`, and the most
+recent installation replaces the console script. Use a dedicated environment
+for V3 or remove the older package first. The module form is also useful in
+automation or for a one-off coexistence diagnosis:
+
+```powershell
+python -m llm_wiki_v3.indexing --vault C:\path\to\markdown
+```
 
 ## Hugging Face authentication and model cache
 
@@ -120,6 +132,57 @@ wiki-eval --vault /path/to/markdown --gold eval_gold_v3.json
   only prepares evidence for an agent and user; it does not decide truth.
 - `wiki-eval` runs retrieval ablations against a maintained gold query file.
   It is an evaluation tool, not an automatic judge of document correctness.
+
+### Resident model runtime and automatic embedding
+
+For repeated CLI searches, start one local daemon per vault. It owns the Qwen
+embedding model, the Chunker V3 runtime, the optional reranker, and the loaded
+retrieval index. It listens only on `127.0.0.1`; its connection state is stored
+under `.llm_wiki_v3/daemon.json` and is not committed source material.
+
+```powershell
+# Keep this terminal open, or add --background to detach it.
+wiki-daemon start --vault C:\path\to\markdown
+
+# In another terminal, start the Markdown watcher.
+wiki-autoembed start --vault C:\path\to\markdown --initial
+
+# Existing commands use the daemon automatically while it is available.
+wiki-search "how is retry handled?" --vault C:\path\to\markdown
+wiki-embed --vault C:\path\to\markdown
+
+wiki-autoembed status --vault C:\path\to\markdown
+wiki-autoembed logs --vault C:\path\to\markdown
+wiki-autoembed stop --vault C:\path\to\markdown
+wiki-daemon stop --vault C:\path\to\markdown
+```
+
+`wiki-autoembed` polls recursively for Markdown additions, edits, renames, and
+deletions, then waits two seconds by default to coalesce editor save events.
+It never loads a model itself: it asks `wiki-daemon` to run the existing
+incremental `wiki-embed` pipeline with the resident Qwen instance. Derived
+directories such as `.llm_wiki_v3/` are ignored; `_wiki_corrections/` is watched
+as normal source Markdown. If the daemon is restarted while changes are queued,
+the watcher retains those paths and retries automatically.
+
+In foreground mode, every detected Markdown change and completed incremental
+embed is printed in that watcher terminal. A background process cannot print
+into the terminal that launched it, so the same events are appended to
+`.llm_wiki_v3/autoembed.log`; use `wiki-autoembed logs` to inspect them.
+`wiki-daemon status --json` reports a stable runtime ID and whether Qwen,
+Small-V3, and the optional reranker are currently loaded. During normal daemon
+operation that runtime ID must remain unchanged across automatic embeds.
+
+`wiki-daemon start --background` waits for Qwen and Small-V3 to finish loading
+before it returns. `wiki-autoembed --initial` queues its first build and keeps
+retrying if the daemon is briefly unavailable, so the two commands can be run
+one after another from the same vault directory without a startup race.
+
+When no daemon is running, `wiki-search` and `wiki-embed` retain their original
+single-process behavior. Use `--no-daemon` to force that diagnostic path even
+when a daemon is available. `wiki-daemon start --background` and
+`wiki-autoembed start --background` run detached; use the `status` and `stop`
+commands to manage them.
 
 Run `wiki-search --help`, `wiki-health --help`, or `wiki-eval --help` for all
 options. Derived indexes can be deleted and rebuilt; Markdown remains the

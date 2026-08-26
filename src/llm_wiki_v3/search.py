@@ -328,45 +328,72 @@ def main() -> int:
     parser.add_argument("--rerank", nargs="?", const=20, default=0, type=int, metavar="N")
     parser.add_argument("--auto", action="store_true")
     parser.add_argument("--range", dest="range_years", type=int, default=None, metavar="YEARS")
+    parser.add_argument("--no-daemon", action="store_true", help="search in this process even when wiki-daemon is running")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
         config = load(args.vault)
         rerank_pool = args.rerank or (10 if args.auto else 0)
-        response = SearchEngine(config).search(
-            args.query,
-            k=args.k,
-            years=args.range_years,
-            rerank_pool=rerank_pool,
-        )
+        daemon_payload = None
+        if not args.no_daemon:
+            from .service import read_daemon_state, request
+
+            daemon_response = request(
+                config.artifact_dir,
+                {
+                    "action": "search",
+                    "query": args.query,
+                    "k": args.k,
+                    "range_years": args.range_years,
+                    "rerank_pool": rerank_pool,
+                    "auto": args.auto,
+                },
+            )
+            if daemon_response is not None:
+                if not daemon_response.get("ok"):
+                    raise RuntimeError(str(daemon_response.get("error") or "daemon search failed"))
+                daemon_payload = dict(daemon_response["result"])
+            elif read_daemon_state(config.artifact_dir) is not None:
+                raise RuntimeError("wiki-daemon state exists but it is not reachable; run wiki-daemon status or restart it")
+        if daemon_payload is None:
+            response = SearchEngine(config).search(
+                args.query,
+                k=args.k,
+                years=args.range_years,
+                rerank_pool=rerank_pool,
+            )
     except (FileNotFoundError, ImportError, RuntimeError, ValueError) as exc:
         print(f"wiki-search: {exc}", file=sys.stderr)
         return 1
 
-    payload: dict[str, Any] = {
-        "query": args.query,
-        "range_years": args.range_years,
-        "reranked": response.reranked,
-        "results": [hit.to_dict() for hit in response.hits],
-    }
-    if args.auto:
-        decision, reason = _auto_decision(response, config)
-        payload.update(decision=decision, reason=reason)
+    if daemon_payload is not None:
+        payload = daemon_payload
+        response = None
+    else:
+        payload: dict[str, Any] = {
+            "query": args.query,
+            "range_years": args.range_years,
+            "reranked": response.reranked,
+            "results": [hit.to_dict() for hit in response.hits],
+        }
+        if args.auto:
+            decision, reason = _auto_decision(response, config)
+            payload.update(decision=decision, reason=reason)
     if args.json or args.auto:
         print(json.dumps(payload, ensure_ascii=False))
     else:
-        for rank, hit in enumerate(response.hits, 1):
-            chunk = hit.chunk
+        for rank, item in enumerate(payload["results"], 1):
+            chunk = item["chunk"]
             flags = []
             if chunk.get("superseded_claims"):
                 flags.append("partial-supersede")
             if chunk.get("disputed"):
                 flags.append("disputed")
             suffix = f" [{' '.join(flags)}]" if flags else ""
-            print(f"{rank}. [{hit.score:.6f}] {chunk['id']}{suffix}")
+            print(f"{rank}. [{float(item['score']):.6f}] {chunk['id']}{suffix}")
             print(f"   {chunk.get('source_path')} :: {' > '.join(chunk.get('heading_path') or [])}")
             print(f"   {str(chunk.get('text') or '')[:240]}")
-            for evidence in hit.related_evidence:
+            for evidence in item.get("related_evidence") or []:
                 related = evidence["chunk"]
                 print(f"   -> {evidence['relation']}: {related['id']} :: {str(related.get('text') or '')[:160]}")
     return 0

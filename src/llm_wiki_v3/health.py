@@ -205,7 +205,19 @@ def main() -> int:
             decision = json.loads(args.decision.read_text(encoding="utf-8"))
             chunks = apply_events(read_jsonl(config.artifact_dir / "chunks.jsonl"), read_events(config))
             event = apply_decision(config, decision, chunks)
-            rebuild = None if args.no_rebuild else build(config)
+            rebuild = None
+            if not args.no_rebuild:
+                from .service import read_daemon_state, request
+
+                daemon_response = request(config.artifact_dir, {"action": "embed"}, timeout=3600.0)
+                if daemon_response is None:
+                    if read_daemon_state(config.artifact_dir) is not None:
+                        raise RuntimeError("wiki-daemon state exists but it is not reachable; run wiki-daemon status or restart it")
+                    rebuild = build(config)
+                elif daemon_response.get("ok"):
+                    rebuild = dict(daemon_response["result"]["manifest"])
+                else:
+                    raise RuntimeError(str(daemon_response.get("error") or "daemon embedding failed"))
             payload = {"applied": event, "rebuild": rebuild}
             print(json.dumps(payload, ensure_ascii=False) if args.json else json.dumps(payload, ensure_ascii=False, indent=2))
             return 0

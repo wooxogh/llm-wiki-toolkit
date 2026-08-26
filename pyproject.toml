@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-wiki-v3"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first Markdown retrieval with Chunker V3, Tree, and k-NN"
 readme = "README.md"
 license = "MIT"
@@ -19,11 +19,17 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
 ]
+
 dependencies = [
   "numpy>=1.24",
   "pyyaml>=6",
   "rank-bm25>=0.2.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/wooxogh/llm-wiki-toolkit"
+Repository = "https://github.com/wooxogh/llm-wiki-toolkit"
+Issues = "https://github.com/wooxogh/llm-wiki-toolkit/issues"
 
 [project.optional-dependencies]
 ml = ["torch>=2.2", "sentence-transformers>=3"]
@@ -34,6 +40,8 @@ wiki-embed = "llm_wiki_v3.indexing:main"
 wiki-search = "llm_wiki_v3.search:main"
 wiki-health = "llm_wiki_v3.health:main"
 wiki-eval = "llm_wiki_v3.evaluate:main"
+wiki-daemon = "llm_wiki_v3.daemon:main"
+wiki-autoembed = "llm_wiki_v3.autoembed:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

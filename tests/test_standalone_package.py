@@ -8,6 +8,8 @@ from importlib.resources import files
 from pathlib import Path
 from unittest.mock import patch
 
+import tomllib
+
 from llm_wiki_v3.chunking.config import DEFAULT_CHECKPOINT
 from llm_wiki_v3.pathing import relative_to_root
 from llm_wiki_v3.skill_install import install
@@ -51,6 +53,14 @@ class StandalonePackageTests(unittest.TestCase):
         source = root / "nested" / "doc.md"
         with patch.object(Path, "resolve", side_effect=AssertionError("resolve is fallback only")):
             self.assertEqual(relative_to_root(source, root), Path("nested/doc.md"))
+
+    def test_public_cli_commands_are_packaged(self) -> None:
+        project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+        scripts = project["project"]["scripts"]
+        self.assertEqual(scripts["wiki-embed"], "llm_wiki_v3.indexing:main")
+        self.assertEqual(scripts["wiki-search"], "llm_wiki_v3.search:main")
+        self.assertEqual(scripts["wiki-daemon"], "llm_wiki_v3.daemon:main")
+        self.assertEqual(scripts["wiki-autoembed"], "llm_wiki_v3.autoembed:main")
 
 
 if __name__ == "__main__":

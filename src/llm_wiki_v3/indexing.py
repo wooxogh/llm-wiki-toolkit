@@ -253,11 +253,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build all LLM-Wiki V3 retrieval artifacts")
     parser.add_argument("--vault", type=Path, default=None)
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--no-daemon", action="store_true", help="build in this process even when wiki-daemon is running")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
         config = load(args.vault)
-        result = build(config, full=args.full)
+        if not args.no_daemon:
+            from .service import read_daemon_state, request
+
+            daemon_response = request(config.artifact_dir, {"action": "embed", "full": args.full}, timeout=3600.0)
+            if daemon_response is not None:
+                if not daemon_response.get("ok"):
+                    raise RuntimeError(str(daemon_response.get("error") or "daemon embedding failed"))
+                result = dict(daemon_response["result"]["manifest"])
+            elif read_daemon_state(config.artifact_dir) is not None:
+                raise RuntimeError("wiki-daemon state exists but it is not reachable; run wiki-daemon status or restart it")
+            else:
+                result = build(config, full=args.full)
+        else:
+            result = build(config, full=args.full)
     except (FileNotFoundError, ImportError, RuntimeError, ValueError) as exc:
         print(f"wiki-embed: {exc}", file=sys.stderr)
         return 1
