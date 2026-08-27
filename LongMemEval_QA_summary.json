@@ -1,0 +1,40 @@
+{
+  "selected_questions": 250,
+  "reader_completed": 250,
+  "judge_completed": 250,
+  "judge_pending": 0,
+  "reader_latency_seconds": {
+    "mean": 5.2847,
+    "p50": 4.9753,
+    "p90": 6.5943,
+    "p95": 7.353,
+    "max": 16.266
+  },
+  "judge_latency_seconds": {
+    "mean": 0.9057,
+    "p50": 0.827,
+    "p90": 1.2396,
+    "p95": 1.5955,
+    "max": 3.6268
+  },
+  "qa_correct": 212,
+  "qa_accuracy": 0.848,
+  "qa_accuracy_wilson_95": [
+    0.798255,
+    0.887212
+  ],
+  "retrieval_metrics": {
+    "hit_at_1": 0.94,
+    "hit_at_3": 0.984,
+    "hit_at_5": 0.992,
+    "recall_at_1": 0.675267,
+    "recall_at_3": 0.935467,
+    "recall_at_5": 0.979733,
+    "reciprocal_rank": 0.963378,
+    "ndcg_at_5": 0.960715
+  },
+  "error_attempts": {
+    "reader": 204,
+    "judge": 0
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "dataset": "LongMemEval-S cleaned",
+  "total_questions": 500,
+  "retrieval_evaluable_questions": 500,
+  "retrieval_skipped_questions": 0,
+  "skip_reasons": {},
+  "completed_questions": 500,
+  "failed_attempts": 0,
+  "metric_question_count": 500,
+  "metrics": {
+    "n": 500,
+    "hit_at_1": 0.93,
+    "recall_at_1": 0.600667,
+    "recall_any_at_1": 0.93,
+    "recall_all_at_1": 0.328,
+    "ndcg_at_1": 0.93,
+    "recall_micro_at_1": 0.490506,
+    "hit_at_3": 0.982,
+    "recall_at_3": 0.926467,
+    "recall_any_at_3": 0.982,
+    "recall_all_at_3": 0.852,
+    "ndcg_at_3": 0.935742,
+    "recall_micro_at_3": 0.883966,
+    "hit_at_5": 0.994,
+    "recall_at_5": 0.970133,
+    "recall_any_at_5": 0.994,
+    "recall_all_at_5": 0.932,
+    "ndcg_at_5": 0.948253,
+    "recall_micro_at_5": 0.956751,
+    "hit_at_10": 0.998,
+    "recall_at_10": 0.987167,
+    "recall_any_at_10": 0.998,
+    "recall_all_at_10": 0.972,
+    "ndcg_at_10": 0.955397,
+    "recall_micro_at_10": 0.984177,
+    "mrr": 0.957922,
+    "latency_ms": {
+      "mean": 55.0925,
+      "p50": 54.4197,
+      "p90": 62.5199,
+      "p95": 65.7882,
+      "max": 181.9392
+    }
+  },
+  "definitions": {
+    "mrr": "mean(1 / first relevant session rank); 0 when no relevant session is retrieved",
+    "recall_at_k": "macro mean of relevant sessions retrieved / all relevant sessions",
+    "recall_micro_at_k": "total relevant sessions retrieved / total relevant sessions",
+    "recall_any_at_k": "macro fraction with at least one relevant session retrieved",
+    "recall_all_at_k": "macro fraction with every relevant session retrieved",
+    "ndcg_at_k": "binary relevance DCG normalized by the ideal ordering of all evidence sessions"
+  }
+}
